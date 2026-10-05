@@ -1,0 +1,14 @@
+name = "clite"
+main = "src/worker.js"
+compatibility_date = "2025-05-05"
+
+[assets]
+directory = "./public"
+binding = "ASSETS"
+
+[vars]
+APP_NAME = "Classify Lite"
+
+[[kv_namespaces]]
+binding = "KV"
+id = "YOUR_KV_NAMESPACE_ID"

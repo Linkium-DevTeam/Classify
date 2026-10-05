@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Classify Lite — 极简远程喊话</title>
+<meta name="theme-color" content="#F4F4F0" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#0B1020" media="(prefers-color-scheme: dark)">
+<link rel="icon" href="/icons/favicon-32.png" sizes="32x32">
+<style>
+:root { color-scheme: light dark; --bg:#F4F4F0; --surface:#FFFFFF; --card:#FFFFFF; --border:#D9D9D2; --accent:#4655D6; --accent2:#3A48C2; --text:#141412; --sub:#63635E; --ok:#1E9E5A; }
+@media (prefers-color-scheme: dark) {
+  :root { --bg:#0B1020; --surface:#131A2E; --card:#1B2440; --border:#2A3558; --accent:#4655D6; --accent2:#7C8CFF; --text:#EDEFFA; --sub:#9AA3BC; --ok:#3DD68C; }
+}
+* { margin:0; padding:0; box-sizing:border-box; }
+body { font-family:"Segoe UI","Microsoft YaHei UI",sans-serif; background:var(--bg); color:var(--text); min-height:100vh; display:flex; justify-content:center; padding:40px 16px; }
+.card { width:100%; max-width:420px; }
+h1 { font-size:22px; margin-bottom:4px; }
+.sub { color:var(--sub); font-size:13px; margin-bottom:24px; }
+.field { margin-bottom:14px; }
+.label { font-size:12px; color:var(--sub); margin-bottom:5px; display:block; }
+input, textarea { width:100%; padding:12px 14px; border-radius:10px; border:1px solid var(--border); background:var(--surface); color:var(--text); font-size:15px; outline:none; transition:border .2s; font-family:inherit; }
+input:focus, textarea:focus { border-color:var(--accent2); }
+input.code { font-size:22px; letter-spacing:8px; text-align:center; font-weight:700; }
+textarea { resize:vertical; min-height:100px; }
+.btn { width:100%; padding:14px; border-radius:10px; border:none; background:var(--accent); color:#fff; font-size:15px; font-weight:600; cursor:pointer; margin-top:6px; transition:background .2s; }
+.btn:hover { background:var(--accent2); }
+.btn:disabled { opacity:.5; cursor:not-allowed; }
+.msg { padding:10px 14px; border-radius:8px; margin-top:12px; font-size:13px; display:none; }
+.msg.ok { background:rgba(61,214,140,.1); color:var(--ok); }
+.msg.err { background:rgba(229,72,77,.1); color:#FF6B6B; }
+.status { margin-top:20px; padding:10px 14px; border-radius:8px; background:var(--surface); font-size:12px; color:var(--sub); }
+.status .dot { display:inline-block; width:8px; height:8px; border-radius:50%; margin-right:6px; }
+.status .dot.on { background:var(--ok); } .status .dot.off { background:#FF6B6B; }
+footer { margin-top:32px; text-align:center; font-size:11.5px; color:var(--sub); }
+footer a { color:var(--accent2); }
+.donate { margin-top:20px; padding:16px; border-radius:12px; background:var(--card); border:1px solid var(--border); transition:border-color .4s, box-shadow .4s; }
+.donate.nudge { border-color:var(--accent2); box-shadow:0 0 0 3px rgba(124,140,255,.25); }
+.donate h2 { font-size:14px; margin-bottom:6px; }
+.donate p { font-size:12px; color:var(--sub); line-height:1.6; margin-bottom:12px; }
+.donate-grid { display:flex; gap:12px; }
+.donate-grid figure { flex:1; margin:0; text-align:center; }
+.donate-grid img { width:100%; max-width:150px; border-radius:8px; display:block; margin:0 auto 6px; }
+.donate-grid figcaption { font-size:11px; color:var(--sub); }
+.donate-afdian { display:block; text-align:center; background:#946CEE; color:#fff; padding:11px; border-radius:9px; font-size:13px; font-weight:600; text-decoration:none; margin-bottom:12px; }
+.donate-afdian:hover { background:#A885F2; }
+</style>
+</head>
+<body>
+<div class="card">
+  <h1>Classify Lite</h1>
+  <p class="sub">极简远程喊话 · 输入设备口令即可发送</p>
+  <div class="field">
+    <label class="label">设备口令（教室电脑上查看）</label>
+    <input class="code" id="code" maxlength="8" placeholder="00000000" inputmode="numeric">
+  </div>
+  <div class="field">
+    <label class="label">喊话内容</label>
+    <textarea id="text" placeholder="输入要展示在教室大屏的文字"></textarea>
+  </div>
+  <button class="btn" id="send">📢 发送到大屏</button>
+  <div class="msg ok" id="msg-ok"></div>
+  <div class="msg err" id="msg-err"></div>
+  <div class="status" id="status"></div>
+  <div class="donate" id="donate">
+    <h2>💜 支持开发者</h2>
+    <p>Classify Lite 免费无广告，但云端服务器有每月成本。觉得好用，请作者喝杯奶茶 ♥</p>
+    <a class="donate-afdian" href="https://afdian.com/a/linkium" target="_blank" rel="noopener">⚡ 爱发电 · 便捷支持（可月供）</a>
+    <div class="donate-grid" hidden>
+    </div>
+  </div>
+  <footer>Classify Lite · <a href="https://ccall.linkium.top" target="_blank">完整版 Classify</a> · support@linkium.top</footer>
+</div>
+<script>
+const $ = s => document.querySelector(s);
+function showMsg(id, text) { const el = $(id); el.textContent = text; el.style.display = "block"; setTimeout(() => el.style.display = "none", 4000); }
+function hideMsgs() { $("#msg-ok").style.display = "none"; $("#msg-err").style.display = "none"; }
+
+async function checkDevice() {
+  const code = $("#code").value.replace(/\D/g, "");
+  if (code.length !== 8) { $("#status").innerHTML = '<span class="dot off"></span>输入 8 位设备口令'; return; }
+  try {
+    const r = await fetch("/api/info?code=" + code);
+    if (r.ok) { const d = await r.json(); $("#status").innerHTML = '<span class="dot on"></span>已连接：' + (d.name || "Clite Device"); }
+    else { $("#status").innerHTML = '<span class="dot off"></span>设备未上线'; }
+  } catch { $("#status").innerHTML = '<span class="dot off"></span>连接失败'; }
+}
+
+$("#code").addEventListener("input", checkDevice);
+$("#code").addEventListener("change", checkDevice);
+checkDevice();
+
+async function doSend() {
+  hideMsgs();
+  const code = $("#code").value.replace(/\D/g, "");
+  const text = $("#text").value.trim();
+  if (code.length !== 8) return showMsg("#msg-err", "请输入 8 位设备口令");
+  if (!text) return showMsg("#msg-err", "请输入喊话内容");
+  const btn = $("#send"); btn.disabled = true; btn.textContent = "发送中…";
+  try {
+    const r = await fetch("/api/send", { method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ code, text }) });
+    const d = await r.json();
+    if (r.ok) {
+      showMsg("#msg-ok", "已发送 ✓"); $("#text").value = "";
+      // 首次发送成功后把捐助卡高亮提醒一次（每浏览器一次）
+      try {
+        if (!localStorage.getItem("donateNudged")) {
+          const d = $("#donate");
+          d.classList.add("nudge");
+          d.scrollIntoView({ behavior: "smooth", block: "nearest" });
+          setTimeout(() => d.classList.remove("nudge"), 3500);
+          localStorage.setItem("donateNudged", "1");
+        }
+      } catch { }
+    }
+    else showMsg("#msg-err", d.error || "发送失败");
+  } catch { showMsg("#msg-err", "网络错误"); }
+  finally { btn.disabled = false; btn.textContent = "📢 发送到大屏"; }
+}
+
+$("#send").addEventListener("click", doSend);
+</script>
+</body>
+</html>
