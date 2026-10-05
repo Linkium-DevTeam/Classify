@@ -1,0 +1,21 @@
+<Window x:Class="Classify.UI.ClockWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Classify 时钟" WindowStyle="None" ResizeMode="NoResize"
+        ShowInTaskbar="False" Background="#FF0B1020">
+    <Grid x:Name="Root" Background="#FF0B1020" MouseDown="Root_Tapped"
+          KeyDown="Root_KeyDown" Focusable="True">
+        <Image x:Name="WallpaperImg" Stretch="UniformToFill" Opacity="0.35"/>
+        <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center">
+            <TextBlock x:Name="TimeText" Text="00:00:00" FontSize="150" FontWeight="Light"
+                       Foreground="White" HorizontalAlignment="Center"
+                       FontFamily="Segoe UI, Microsoft YaHei UI"/>
+            <TextBlock x:Name="DateText" Text="" FontSize="22" Foreground="#FF9AA3BC"
+                       HorizontalAlignment="Center" Margin="0,10,0,0"/>
+            <TextBlock x:Name="ModeText" Text="" FontSize="17" Foreground="#FF6B7694"
+                       HorizontalAlignment="Center" Margin="0,14,0,0"/>
+        </StackPanel>
+        <TextBlock Text="Esc 或点击退出" FontSize="12" Foreground="#FF4A5470"
+                   HorizontalAlignment="Center" VerticalAlignment="Bottom" Margin="0,0,0,20"/>
+    </Grid>
+</Window>

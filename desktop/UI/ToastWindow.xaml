@@ -1,0 +1,17 @@
+<Window x:Class="Classify.UI.ToastWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Classify" WindowStyle="None" ResizeMode="NoResize"
+        ShowInTaskbar="False" ShowActivated="False" SizeToContent="Height" MaxWidth="380"
+        Background="Transparent">
+    <Border Background="#F2111626" CornerRadius="16" Padding="18,14"
+            BorderBrush="#334655D6" BorderThickness="1">
+        <StackPanel MaxWidth="344">
+            <TextBlock x:Name="TitleText" Text="" FontSize="13.5" FontWeight="SemiBold" Foreground="#FFEDEFFA"
+                       TextWrapping="Wrap" FontFamily="Segoe UI, Microsoft YaHei UI, Segoe UI Emoji"/>
+            <TextBlock x:Name="BodyText" Text="" FontSize="12.5" Foreground="#FF9AA3BC"
+                       TextWrapping="Wrap" Margin="0,5,0,0" MaxHeight="130"
+                       FontFamily="Segoe UI, Microsoft YaHei UI, Segoe UI Emoji"/>
+        </StackPanel>
+    </Border>
+</Window>

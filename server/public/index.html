@@ -1,0 +1,439 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Classify · 教师喊话</title>
+<meta name="description" content="教师通过手机向教室一体机发送喊话、传送文件与系统控制">
+<meta name="theme-color" content="#fbf8ff">
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="icon" href="/icons/favicon-32.png" sizes="32x32">
+<link rel="icon" href="/icons/favicon-48.png" sizes="48x48">
+<link rel="apple-touch-icon" href="/icons/apple-touch-icon.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Classify">
+<link rel="stylesheet" href="/css/app.css">
+</head>
+<body>
+
+<!-- ======== 登录 / 注册 ======== -->
+<div id="auth-view" class="auth-wrap" hidden>
+  <div class="auth-bg" aria-hidden="true"></div>
+  <div class="auth-card">
+    <div class="auth-brand">
+      <img class="brand-logo" src="/icons/icon-192.png" alt="Classify" width="76" height="76">
+      <h1 class="display-s">Classify</h1>
+      <p class="body-m on-var">课堂喊话 · 文件快传 · 一机掌握</p>
+    </div>
+
+    <div class="seg" role="tablist">
+      <button class="auth-tab active" data-mode="login" role="tab">登录</button>
+      <button class="auth-tab" data-mode="register" role="tab">注册</button>
+    </div>
+
+    <form id="auth-form" autocomplete="off">
+      <label class="field">
+        <span class="field-label">用户名</span>
+        <input id="f-username" type="text" maxlength="24" placeholder="3-24 位字母 / 数字 / 下划线" required>
+      </label>
+      <label class="field">
+        <span class="field-label">密码</span>
+        <input id="f-password" type="password" maxlength="64" placeholder="至少 8 位" required>
+      </label>
+      <label class="field" id="pwd2-row" hidden>
+        <span class="field-label">确认密码</span>
+        <input id="f-password2" type="password" maxlength="64" placeholder="再输入一次">
+      </label>
+      <label class="field" id="subject-row" hidden>
+        <span class="field-label">任教学科 <em>（用于智能候课匹配课程表）</em></span>
+        <select id="f-subject">
+          <option>语文</option><option>数学</option><option>英语</option>
+          <option>物理</option><option>化学</option><option>生物</option>
+          <option>政治</option><option>历史</option><option>地理</option>
+          <option selected>其他</option>
+        </select>
+      </label>
+      <div id="auth-error" class="error-banner" hidden></div>
+      <div id="cf-turnstile-box" hidden style="margin:10px 0"></div>
+      <button id="auth-submit" class="btn btn-filled btn-block btn-l" type="submit">登 录</button>
+      <button id="btn-forgot" class="btn btn-text btn-block" type="button">忘记密码？</button>
+      <div id="reset-panel" hidden>
+        <p class="body-s on-var" style="margin:0 0 6px">自助重置需要「密码重置码」：注册时曾展示一次；或在已绑定的教室电脑上打开 设置 → 密码重置码 重新生成。</p>
+        <label class="field"><span class="field-label">用户名</span>
+          <input id="r-username" type="text" maxlength="24" placeholder="账号用户名"></label>
+        <label class="field"><span class="field-label">重置码</span>
+          <input id="r-code" type="text" maxlength="16" placeholder="12 位重置码" style="text-transform:uppercase"></label>
+        <label class="field"><span class="field-label">新密码</span>
+          <input id="r-newpass" type="password" maxlength="64" placeholder="至少 8 位"></label>
+        <div id="reset-error" class="error-banner" hidden></div>
+        <button id="reset-submit" class="btn btn-tonal btn-block" type="button">重置密码并登录</button>
+      </div>
+    </form>
+
+    <p class="body-s on-var auth-foot">登录即代表同意 <a href="#" id="link-legal">《用户协议》</a>与<a href="#" id="link-privacy">《隐私政策》</a></p>
+  </div>
+  <p class="body-s on-var copy">© 2026 Linkium DevTeam · Classify · <a href="mailto:support@linkium.top" style="color:inherit">support@linkium.top</a></p>
+</div>
+
+<!-- ======== 主框架 ======== -->
+<div id="app-view" class="layout" hidden>
+  <nav class="nav" aria-label="主导航">
+    <button class="nav-item active" data-tab="announce">
+      <span class="nav-ind"><span class="nav-ico">📢</span></span><span class="nav-label">喊话</span>
+    </button>
+    <button class="nav-item" data-tab="files">
+      <span class="nav-ind"><span class="nav-ico">🗂️</span></span><span class="nav-label">文件</span>
+    </button>
+    <button class="nav-item" data-tab="devices">
+      <span class="nav-ind"><span class="nav-ico">🖥️</span></span><span class="nav-label">设备</span>
+    </button>
+    <button class="nav-item" data-tab="system">
+      <span class="nav-ind"><span class="nav-ico">🎛️</span></span><span class="nav-label">控制</span>
+    </button>
+    <button class="nav-item" data-tab="settings">
+      <span class="nav-ind"><span class="nav-ico">⚙️</span></span><span class="nav-label">我的</span>
+    </button>
+  </nav>
+
+  <div class="main">
+    <header class="appbar">
+      <div class="appbar-lead">
+        <img src="/icons/icon-192.png" alt="" width="36" height="36">
+        <div><b class="title-m">Classify</b><small class="body-s on-var" id="hdr-sub">课堂喊话</small></div>
+      </div>
+      <div class="appbar-actions">
+        <span id="demo-banner" class="pill" hidden>预览模式</span>
+        <button id="install-btn" class="btn btn-tonal btn-sm" hidden>📲 安装到手机</button>
+        <button id="hdr-user" class="avatar-btn" title="账号"><span id="hdr-avatar" class="avatar">师</span><span id="hdr-name" class="body-m">—</span></button>
+      </div>
+    </header>
+
+    <div id="svc-banner" class="svc-banner" hidden></div>
+
+    <main class="content">
+
+      <!-- 喊话 -->
+      <section id="tab-announce" class="tab active">
+        <p id="welcome-greeting" class="headline-s" style="margin:0 0 4px 4px">👋 你好，老师</p>
+        <div class="card">
+          <h2 class="headline-s">发送喊话</h2>
+          <p class="body-m on-var">内容将展示在教室大屏并语音朗读；正在上课时自动改为弹窗，不打断课件。</p>
+          <div class="chips" id="an-targets"></div>
+          <div class="chips" id="an-quick" style="margin-bottom:6px"></div>
+          <div class="chips" id="an-history" style="margin-bottom:6px"></div>
+          <div class="field area">
+            <textarea id="an-text" rows="4" maxlength="2000"
+              placeholder="输入喊话内容，例如：第三组的同学请到讲台集合 🙋"></textarea>
+          </div>
+          <div class="row between">
+            <span class="row" style="gap:8px">
+              <span class="body-s on-var" id="an-count">0 / 2000</span>
+              <button id="an-save-quick" class="btn btn-text btn-sm">＋存为常用语</button>
+            </span>
+            <label class="switch"><input type="checkbox" id="an-speak" checked><i></i><span class="label-l">语音朗读</span></label>
+          </div>
+          <button id="an-send" class="btn btn-filled btn-block btn-xl">📢 发送到大屏</button>
+          <p class="body-s on-var center" id="an-hint"></p>
+        </div>
+
+        <div class="card">
+          <h2 class="headline-s">🎲 随机点名</h2>
+          <p class="body-m on-var">从早读看板名册中随机抽一名学生：大屏滚动姓名后定格并朗读。需先在看板中建好小组成员。</p>
+          <button id="picker-run" class="btn btn-tonal btn-block">🎲 开始点名</button>
+        </div>
+
+        <div class="card">
+          <h2 class="headline-s">⏰ 课堂时钟</h2>
+          <p class="body-m on-var">在教室大屏上全屏显示时钟或倒计时；点屏幕 / Esc 关闭。</p>
+          <div class="btn-grid">
+            <button id="clock-open" class="btn btn-tonal">🕐 全屏时钟</button>
+            <button id="clock-stop" class="btn btn-tonal">⏹ 关闭时钟</button>
+          </div>
+          <div class="row" style="margin-top:12px">
+            <input id="cd-minutes" type="number" min="1" max="180" value="20" class="cd-input">
+            <button id="cd-start" class="btn btn-tonal">⏳ 开始倒计时（分钟）</button>
+          </div>
+          <div class="chips" id="cd-presets" style="margin-top:8px"></div>
+        </div>
+
+        <div class="card">
+          <h2 class="headline-s">📌 常驻通知</h2>
+          <p class="body-m on-var">与喊话不同：常驻通知会一直显示在教室大屏顶部灵动岛上，直到清除。</p>
+          <div class="field area">
+            <textarea id="notice-text" rows="2" maxlength="500" placeholder="例如：第三节课改到实验室上 · 王老师"></textarea>
+          </div>
+          <div class="btn-grid">
+            <button id="notice-send" class="btn btn-tonal">📌 发布到灵动岛</button>
+            <button id="notice-clear" class="btn btn-outline-danger">清除我的通知</button>
+          </div>
+        </div>
+
+        <div class="card">
+          <h2 class="headline-s">📷 教室照片</h2>
+          <p class="body-m on-var">让教室电脑用前置摄像头（SmartCamera）拍一张照片回传，在下方文件列表查看。出于隐私考虑，<b>设备端默认关闭此功能</b>，需在教室电脑「设置 → 权限与隐私」中开启。</p>
+          <button id="cam-capture" class="btn btn-tonal btn-block">📷 拍照回传</button>
+          <p class="body-s on-var center" id="cam-hint"></p>
+        </div>
+
+        <div class="card">
+          <h2 class="headline-s">📖 早读智能看板</h2>
+          <p class="body-m on-var">联动 EasiCareHelper（需在教室电脑运行）。学生在看板上按小组展示；加分模式与换算比例按你的账号设置生效。</p>
+          <div class="btn-grid">
+            <button id="rb-open" class="btn btn-tonal">📖 开启看板</button>
+            <button id="rb-close" class="btn btn-tonal">⏹ 关闭看板</button>
+            <button id="rb-refresh" class="btn btn-tonal">🔄 刷新小组状态</button>
+          </div>
+          <div class="row" style="margin-top:10px;gap:8px;flex-wrap:wrap;align-items:center">
+            <span class="body-m on-var">按人数自动分组：</span>
+            <span class="body-s on-var">每组</span>
+            <input id="ag-size" type="number" min="2" max="20" value="6" class="cd-input" style="width:64px">
+            <span class="body-s on-var">人</span>
+            <button id="ag-run" class="btn btn-tonal btn-sm">🎲 自动分组</button>
+          </div>
+          <div class="row" style="margin-top:10px;gap:8px;flex-wrap:wrap;align-items:center">
+            <span class="body-m on-var">新增任务：</span>
+            <input id="task-name" class="cd-input" style="flex:1;min-width:120px" placeholder="任务内容，如：背诵第二段">
+            <input id="task-minutes" type="number" min="0" max="120" value="10" class="cd-input" style="width:64px">
+            <span class="body-s on-var">分钟</span>
+            <button id="task-add" class="btn btn-tonal btn-sm">＋ 提前加入任务单</button>
+          </div>
+          <div class="rb-groups" id="rb-groups"><span class="body-s on-var">开启看板后此处显示小组与任务单</span></div>
+          <p class="body-s on-var" id="rb-eval-hint"></p>
+          <div class="row" style="margin-top:12px;flex-wrap:wrap;gap:8px">
+            <span class="body-m on-var">加分模式</span>
+            <select id="rb-mode" class="cb-select">
+              <option value="slash">斜杠模式：斜杠满比例自动派花</option>
+              <option value="flower">红花模式：直接加减红花</option>
+            </select>
+            <span class="body-m on-var" id="rb-ratio-label">比例</span>
+            <input id="rb-ratio" type="number" min="1" max="10" value="3" class="cd-input" style="width:76px">
+            <span class="body-s on-var" id="rb-ratio-suffix">条斜杠 = 1 朵 🌸</span>
+            <button id="rb-config-save" class="btn btn-filled btn-sm">保存规则</button>
+          </div>
+        </div>
+
+        <div class="card">
+          <h2 class="headline-s">🖼️ 图片快投</h2>
+          <p class="body-m on-var">把手机里的图片立刻投到教室大屏全屏显示（点大屏左右半屏翻页，✕ 关闭）。</p>
+          <button id="cam-cast-btn" class="btn btn-tonal btn-block">🖼️ 选择图片投屏</button>
+          <input id="cam-cast-input" type="file" accept="image/*" hidden>
+          <p class="body-s on-var center" id="cam-cast-hint"></p>
+        </div>
+
+        <div class="card">
+          <h2 class="headline-s">🖥️ 教室画面</h2>
+          <p class="body-m on-var">让教室电脑截取当前屏幕画面回传，在下方文件列表查看。</p>
+          <button id="screen-capture" class="btn btn-tonal btn-block">🖥️ 截屏回传</button>
+        </div>
+      </section>
+
+      <!-- 文件 -->
+      <section id="tab-files" class="tab">
+        <div class="card">
+          <h2 class="headline-s">文件快传</h2>
+          <p class="body-m on-var">上课前把课件、视频等传到教室电脑<b>桌面</b>，无需 U 盘。</p>
+          <div id="file-drop" class="dropzone">
+            <div class="dz-ico">📤</div>
+            <b class="title-m">点击选择或拖拽文件到此处</b>
+            <span class="body-s on-var">单文件上限见服务器配置，默认 80MB</span>
+            <input id="file-input" type="file" hidden>
+          </div>
+          <div id="up-box" hidden>
+            <div class="progress"><i id="up-bar"></i></div>
+            <span class="body-s on-var" id="up-label"></span>
+          </div>
+          <h3 class="title-m list-title">最近发送</h3>
+          <div id="file-list" class="item-list"><p class="body-m on-var center empty">还没有传过文件</p></div>
+        </div>
+      </section>
+
+      <!-- 设备 -->
+      <section id="tab-devices" class="tab">
+        <div class="card">
+          <h2 class="headline-s">教室设备</h2>
+          <p class="body-m on-var">在教室电脑向导中输入配对码即可绑定；<b>同一台设备可被多位教师绑定</b>，协作使用。推荐直接扫电脑上的二维码。</p>
+          <button id="pair-btn" class="btn btn-filled btn-block btn-l">🔑 生成配对码（10 分钟有效）</button>
+          <div id="pair-card" class="pair-card" hidden>
+            <span class="body-s on-var">在电脑向导中输入配对码</span>
+            <div id="pair-code" class="pair-code">······</div>
+            <span class="body-s on-var" id="pair-timer"></span>
+          </div>
+          <h3 class="title-m list-title">已绑定设备</h3>
+          <div id="dev-list" class="item-list"><p class="body-m on-var center empty">还没有绑定设备</p></div>
+        </div>
+      </section>
+
+      <!-- 控制 -->
+      <section id="tab-system" class="tab">
+        <div class="card">
+          <h2 class="headline-s">系统控制</h2>
+          <p class="body-m on-var">远程调节教室电脑音量、锁屏与电源；危险操作需二次确认。</p>
+          <label class="field select">
+            <span class="field-label">目标设备</span>
+            <select id="sys-devices"></select>
+          </label>
+          <div class="vol-row">
+            <span class="vol-ico">🔊</span>
+            <input id="vol" type="range" min="0" max="100" value="60">
+            <b class="label-l" id="vol-val">60%</b>
+          </div>
+          <div class="btn-grid">
+            <button id="btn-vol" class="btn btn-tonal">应用音量</button>
+            <button id="btn-mute" class="btn btn-tonal">🔇 静音</button>
+            <button id="btn-lock" class="btn btn-tonal">🔒 锁屏</button>
+            <button id="btn-screen" class="btn btn-tonal">🌑 熄屏</button>
+          </div>
+          <div class="danger-zone">
+            <b class="label-l err-text">危险操作</b>
+            <div class="btn-grid">
+              <button id="btn-reboot" class="btn btn-outline-danger">🔁 重启电脑</button>
+              <button id="btn-shutdown" class="btn btn-outline-danger">⏻ 关机</button>
+            </div>
+            <p class="body-s on-var">若教室端未开启「允许关机/重启」，指令将被拒绝。</p>
+          </div>
+        </div>
+      </section>
+
+      <!-- 我的 -->
+      <section id="tab-settings" class="tab">
+        <div class="card">
+          <h2 class="headline-s">账号</h2>
+          <div class="row" style="align-items:center;gap:14px;margin-bottom:10px;flex-wrap:wrap">
+            <img id="st-avatar-preview" src="/icons/devteam.png" alt="头像"
+                 style="width:64px;height:64px;border-radius:16px;object-fit:cover;background:#fff;border:1px solid var(--outline-var)">
+            <div class="row" style="gap:8px;flex-wrap:wrap">
+              <button id="st-avatar-btn" class="btn btn-tonal btn-sm">📷 上传头像</button>
+              <button id="st-avatar-clear" class="btn btn-tonal btn-sm">恢复默认</button>
+              <input id="st-avatar-input" type="file" accept="image/*" hidden>
+            </div>
+          </div>
+          <div class="kv"><span class="body-m on-var">用户名</span><b class="body-l" id="st-username">—</b></div>
+          <div class="kv"><span class="body-m on-var">教师 ID</span><b class="body-l" id="st-uid">—</b></div>
+          <div class="kv"><span class="body-m on-var">服务器</span><b class="body-l ellipsis" id="st-server">—</b></div>
+          <div class="kv"><span class="body-m on-var">任教学科</span>
+            <select id="st-subject" class="cb-select" disabled selected-placeholder title="任教学科在注册时填写，不可更改">
+              <option>语文</option><option>数学</option><option>英语</option>
+              <option>物理</option><option>化学</option><option>生物</option>
+              <option>政治</option><option>历史</option><option>地理</option>
+              <option>其他</option>
+            </select>
+            <span class="body-s on-var">（注册时填写，不可更改）</span>
+          </div>
+          <div class="kv"><span class="body-m on-var">匿名遥测</span>
+            <label class="switch"><input type="checkbox" id="st-telemetry" checked><i></i><span class="label-l">帮助改进（仅计数，无内容）</span></label>
+          </div>
+          <div class="kv"><span class="body-m on-var">问题反馈</span>
+            <button id="fb-send-btn" class="btn btn-tonal btn-sm">💬 反馈问题</button>
+            <a class="body-s on-var" href="mailto:support@linkium.top" style="margin-left:8px">或邮件 support@linkium.top</a>
+          </div>
+          <button id="btn-delete-account" class="btn btn-text btn-block" style="color:var(--err)">删除账号（注销，所有数据将被清除且不可恢复）</button>
+          <button id="btn-logout" class="btn btn-outline-danger btn-block">退出登录</button>
+        </div>
+        <div class="card">
+          <h2 class="headline-s">💜 支持开发者</h2>
+          <p class="body-m on-var">Classify 免费无广告，但云端服务器有每月成本。觉得好用，请开发者喝杯奶茶 ♥</p>
+          <a class="btn btn-tonal btn-block" href="https://afdian.com/a/linkium" target="_blank" rel="noopener" style="margin-bottom:12px">⚡ 爱发电 · 便捷支持（可月供）</a>
+          <div class="donate-grid" hidden>
+          </div>
+        </div>
+        <div class="card">
+          <h2 class="headline-s">⏰ 智能候课</h2>
+          <p class="body-m on-var">课前 N 分钟自动为当节学科教师执行候课操作集（高权限：不受设备端开关限制）。需先填写课程表；今天临时换课用「立即候课」手动指定。</p>
+          <div class="row" style="margin-bottom:8px">
+            <span class="body-m on-var">候课提前</span>
+            <input id="preclass-minutes" type="number" min="1" max="30" value="5" class="cd-input">
+            <span class="body-s on-var">分钟</span>
+          </div>
+          <div id="tt-grid" class="tt-grid"></div>
+          <div id="tt-ops" class="row" style="margin:10px 0;gap:8px;flex-wrap:wrap"></div>
+          <p id="tt-updatedby" class="body-s on-var" style="margin:4px 0"></p>
+          <div class="row" style="margin:10px 0">
+            <button id="tt-save" class="btn btn-filled">保存课程表</button>
+            <button id="tt-paste" class="btn btn-tonal">从 Excel 粘贴</button>
+          </div>
+          <h3 class="title-m" style="margin:14px 0 8px">我的候课操作集（按序执行）</h3>
+          <div id="actions-list"></div>
+          <div class="row" style="margin:10px 0">
+            <button id="action-add" class="btn btn-tonal">＋ 添加动作</button>
+            <button id="actions-save" class="btn btn-filled">保存操作集</button>
+            <button id="preclass-run" class="btn btn-filled">⚡ 立即候课（当节学科）</button>
+          </div>
+          <div class="row admin-only" hidden style="margin:10px 0;gap:8px;flex-wrap:wrap">
+            <span class="body-m on-var">指定学科候课</span>
+            <select id="preclass-subject" class="cb-select">
+              <option>语文</option><option>数学</option><option>英语</option>
+              <option>物理</option><option>化学</option><option>生物</option>
+              <option>政治</option><option>历史</option><option>地理</option>
+              <option>其他</option>
+            </select>
+            <button id="preclass-override" class="btn btn-filled">⚡ 指定学科候课</button>
+          </div>
+          <p class="body-s on-var">动作：时钟=分钟；语音播报=文字；打开=文件路径或网址；音量=0-100；早读看板；延迟=秒。</p>
+        </div>
+
+        <div class="card">
+          <h2 class="headline-s">安装到手机（PWA）</h2>
+          <p class="body-m on-var" id="pwa-hint">在浏览器菜单中选择「添加到主屏幕」，即可像 App 一样使用。</p>
+          <button id="btn-install2" class="btn btn-filled btn-block btn-l" hidden>📲 立即安装</button>
+        </div>
+        <div class="card admin-only" hidden>
+          <h2 class="headline-s">🛠️ 开发者控制台</h2>
+          <p class="body-m on-var">运营总览、用户治理（封禁/删除/重置码）、服务公告、注册开关、用户反馈与崩溃上报已迁移至独立控制台，仅开发者账号可访问。</p>
+          <a class="btn btn-filled btn-block btn-l" href="/admin" target="_blank" rel="noopener">打开开发者控制台（/admin）↗</a>
+        </div>
+        <div class="card">
+          <h2 class="headline-s">关于</h2>
+          <div class="about">
+            <img src="/icons/icon-192.png" width="56" height="56" alt="">
+            <div>
+              <b class="title-m">Classify</b> <span class="body-s on-var" id="st-version"></span>
+              <p class="body-s on-var">教师喊话 · 文件快传 · 系统控制</p>
+        </div>
+          <div class="about" style="margin-top:-6px">
+            <img src="/icons/devteam.png" width="56" height="56" alt="Linkium DevTeam"
+                 style="background:#fff;border-radius:14px;border:1px solid var(--outline-var)">
+            <div>
+              <b class="title-m">Linkium DevTeam</b>
+              <p class="body-s on-var">© 2026 Linkium DevTeam</p>
+            </div>
+          </div>
+          <div class="btn-grid">
+            <button id="btn-about" class="btn btn-tonal">关于本软件</button>
+            <button id="btn-legal" class="btn btn-tonal">协议与隐私</button>
+          </div>
+        </div>
+      </section>
+
+    </main>
+  </div>
+</div>
+
+<!-- 扫码绑定确认 -->
+<div id="bind-overlay" class="scrim" hidden>
+  <div class="dialog">
+    <h3 class="headline-s">🔗 绑定教室设备</h3>
+    <div id="bind-body" class="dialog-body"><p style="margin:0">正在读取绑定信息…</p></div>
+    <div class="dialog-actions">
+      <button id="bind-cancel" class="btn btn-text">暂不绑定</button>
+      <button id="bind-ok" class="btn btn-filled">确认绑定</button>
+    </div>
+  </div>
+</div>
+
+<!-- 通用弹窗 -->
+<div id="modal" class="scrim" hidden>
+  <div class="dialog">
+    <h3 id="modal-title" class="headline-s"></h3>
+    <div id="modal-body" class="dialog-body"></div>
+    <div class="dialog-actions">
+      <button id="modal-cancel" class="btn btn-text">取消</button>
+      <button id="modal-ok" class="btn btn-filled">确定</button>
+    </div>
+  </div>
+</div>
+
+<div id="toast" class="snackbar" hidden></div>
+
+<script src="/js/app.js"></script>
+</body>
+</html>

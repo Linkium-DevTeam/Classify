@@ -1,0 +1,55 @@
+# ClassCall Lite — Cloudflare Worker 配置
+# 部署前必读：docs/部署指南.md
+name = "classcall"
+main = "src/worker.js"
+compatibility_date = "2025-05-05"
+
+# 自定义域名（classify 为新门户入口；ccall 为历史别名，仍在面板中保留）
+# 自定义域名按需配置（可选）：
+# routes = [
+#   { pattern = "your-domain.example", custom_domain = true }
+# ]
+
+# 静态资源（教师 WebUI / PWA）
+[assets]
+directory = "./public"
+binding = "ASSETS"
+not_found_handling = "single-page-application"
+# 指定路径强制先走 worker（/ 官网、/app 教师端、/lite 控制页、下载直链、lite API 反代）
+run_worker_first = ["/", "/app", "/app/", "/lite", "/lite/", "/lite/api/*", "/download/*", "/api/*"]
+
+[vars]
+APP_NAME = "Classify"
+# 单文件大小上限（MB），Workers 免费版单请求上限 100MB
+MAX_FILE_MB = "80"
+# 服务器端文件保留天数（超期由定时任务清理）
+FILE_RETENTION_DAYS = "7"
+
+# 每用户设备表（强一致 Durable Object）
+[[durable_objects.bindings]]
+name = "STORE"
+class_name = "GlobalStoreDO"
+
+# 每设备消息收件箱（支持长轮询）
+[[durable_objects.bindings]]
+name = "INBOX"
+class_name = "InboxDO"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["GlobalStoreDO", "InboxDO"]
+
+[[kv_namespaces]]
+binding = "KV"
+id = "YOUR_KV_NAMESPACE_ID"
+
+[[r2_buckets]]
+binding = "FILES"
+bucket_name = "classcall-files"
+
+[triggers]
+crons = ["0 3 * * *"]
+
+# 机密（不要写进本文件，用命令设置）：
+#   npx wrangler secret put SECRET_KEY      # 32+ 位随机串，用于签发令牌
+#   npx wrangler secret put INVITE_CODE     # 可选：设置后注册需要邀请码

@@ -1,0 +1,194 @@
+<UserControl x:Class="Classify.UI.SettingsPage"
+      xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+      xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <ScrollViewer VerticalScrollBarVisibility="Auto">
+        <StackPanel MaxWidth="760" HorizontalAlignment="Left">
+
+            <!-- 云端 -->
+            <TextBlock Text="云端连接" Style="{StaticResource TTitle}" Margin="0,0,0,12"/>
+            <Border Style="{StaticResource Card}">
+                <StackPanel>
+                    <Grid Margin="0,0,0,8">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="110"/>
+                            <ColumnDefinition Width="*"/>
+                        </Grid.ColumnDefinitions>
+                        <TextBlock Text="服务器" Style="{StaticResource TBody}" VerticalAlignment="Center"/>
+                        <TextBox x:Name="ServerBox" Grid.Column="1" Style="{StaticResource InputBox}"/>
+                    </Grid>
+                    <Grid Margin="0,0,0,8">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="110"/>
+                            <ColumnDefinition Width="*"/>
+                        </Grid.ColumnDefinitions>
+                        <TextBlock Text="设备" Style="{StaticResource TBody}" VerticalAlignment="Center"/>
+                        <TextBox x:Name="DeviceIdBox" Grid.Column="1" Style="{StaticResource InputBox}" IsReadOnly="True" Opacity="0.8"/>
+                    </Grid>
+                    <StackPanel Orientation="Horizontal">
+                        <Button x:Name="ReconnectBtn" Style="{StaticResource BtnPrimary}" Content="重新连接"
+                                Click="ReconnectBtn_Click"/>
+                        <Button x:Name="RewizardBtn" Style="{StaticResource BtnTonal}" Content="重新绑定向导"
+                                Margin="10,0,0,0" Click="RewizardBtn_Click"/>
+                    </StackPanel>
+                    <TextBlock x:Name="CloudHint" Style="{StaticResource TCaption}" Margin="0,10,0,0"/>
+                </StackPanel>
+            </Border>
+
+            <!-- 语音 -->
+            <TextBlock Text="语音朗读" Style="{StaticResource TTitle}" Margin="0,14,0,12"/>
+            <Border Style="{StaticResource Card}">
+                <StackPanel>
+                    <CheckBox x:Name="TtsToggle" Style="{StaticResource Switch}" Content="收到喊话时自动朗读"
+                              Margin="0,0,0,12" Checked="TtsToggle_Toggled" Unchecked="TtsToggle_Toggled"/>
+                    <Grid Margin="0,0,0,8">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="110"/>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+                        <TextBlock Text="本地语音" Style="{StaticResource TBody}" VerticalAlignment="Center"/>
+                        <ComboBox x:Name="VoiceCombo" Grid.Column="1" Style="{StaticResource Combo}"
+                                  SelectionChanged="VoiceCombo_SelectionChanged"/>
+                        <Button x:Name="NaturalVoiceBtn" Grid.Column="2" Style="{StaticResource BtnSmall}"
+                                Content="启用自然语音" Margin="10,0,0,0" Click="NaturalVoiceBtn_Click"/>
+                    </Grid>
+                    <Grid Margin="0,0,0,8">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="110"/>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+                        <TextBlock Text="语速" Style="{StaticResource TBody}" VerticalAlignment="Center"/>
+                        <Slider x:Name="RateSlider" Grid.Column="1" Style="{StaticResource HSlider}"
+                                ValueChanged="RateSlider_ValueChanged" VerticalAlignment="Center" Margin="0,0,12,0"/>
+                        <TextBlock x:Name="RateText" Grid.Column="2" Style="{StaticResource TCaption}"
+                                   Text="1.0×" VerticalAlignment="Center"/>
+                    </Grid>
+                    <Button x:Name="TtsTestBtn" Style="{StaticResource BtnSmall}" Content="🔊 试听"
+                           Click="TtsTestBtn_Click" HorizontalAlignment="Left"/>
+
+                    <Separator Margin="0,14" Background="{StaticResource BrushBorder}"/>
+
+                    <Grid Margin="0,0,0,8">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="110"/>
+                            <ColumnDefinition Width="*"/>
+                        </Grid.ColumnDefinitions>
+                        <TextBlock Text="Azure 区域" Style="{StaticResource TBody}" VerticalAlignment="Center"/>
+                        <TextBox x:Name="AzureRegionBox" Grid.Column="1" Style="{StaticResource InputBox}"/>
+                    </Grid>
+                    <Grid Margin="0,0,0,8">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="110"/>
+                            <ColumnDefinition Width="*"/>
+                        </Grid.ColumnDefinitions>
+                        <TextBlock Text="Azure 密钥" Style="{StaticResource TBody}" VerticalAlignment="Center"/>
+                        <PasswordBox x:Name="AzureKeyBox" Grid.Column="1" Style="{StaticResource PassBox}"/>
+                    </Grid>
+                    <Grid Margin="0,0,0,8">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="110"/>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+                        <TextBlock Text="Azure 语音" Style="{StaticResource TBody}" VerticalAlignment="Center"/>
+                        <ComboBox x:Name="AzureVoiceCombo" Grid.Column="1" Style="{StaticResource Combo}"
+                                  SelectionChanged="AzureVoiceCombo_SelectionChanged"/>
+                        <Button x:Name="AzureVoiceRefresh" Grid.Column="2" Style="{StaticResource BtnSmall}"
+                                Content="刷新列表" Margin="10,0,0,0" Click="AzureVoiceRefresh_Click"/>
+                    </Grid>
+                    <StackPanel Orientation="Horizontal">
+                        <Button x:Name="AzureSaveBtn" Style="{StaticResource BtnSmall}" Content="保存 Azure 配置"
+                                Click="AzureSaveBtn_Click"/>
+                        <Button x:Name="AzureTestBtn" Style="{StaticResource BtnSmall}" Content="试听晓晓"
+                                Margin="10,0,0,0" Click="AzureTestBtn_Click"/>
+                    </StackPanel>
+                    <CheckBox x:Name="AzureToggle" Style="{StaticResource Switch}" Content="启用 Azure 神经语音（失败自动回退本地）"
+                              Margin="0,12,0,0" Checked="AzureToggle_Toggled" Unchecked="AzureToggle_Toggled"/>
+                </StackPanel>
+            </Border>
+
+            <!-- 提示音与展示 -->
+            <TextBlock Text="提示音与展示" Style="{StaticResource TTitle}" Margin="0,14,0,12"/>
+            <Border Style="{StaticResource Card}">
+                <StackPanel>
+                    <CheckBox x:Name="ChimeToggle" Style="{StaticResource Switch}" Content="喊话前置提示音"
+                              Margin="0,0,0,12" Checked="ChimeToggle_Toggled" Unchecked="ChimeToggle_Toggled"/>
+                    <Grid Margin="0,0,0,12">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="110"/>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+                        <TextBlock Text="自定义音效" Style="{StaticResource TBody}" VerticalAlignment="Center"/>
+                        <TextBox x:Name="ChimePathBox" Grid.Column="1" Style="{StaticResource InputBox}"
+                                 TextChanged="ChimePathBox_TextChanged"/>
+                        <Button x:Name="ChimePickBtn" Grid.Column="2" Style="{StaticResource BtnSmall}"
+                                Content="选择 WAV" Margin="10,0,0,0" Click="ChimePickBtn_Click"/>
+                    </Grid>
+                    <Grid Margin="0,0,0,8">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="110"/>
+                            <ColumnDefinition Width="90"/>
+                            <ColumnDefinition Width="110"/>
+                            <ColumnDefinition Width="90"/>
+                        </Grid.ColumnDefinitions>
+                        <TextBlock Text="全屏停留" Style="{StaticResource TBody}" VerticalAlignment="Center"/>
+                        <TextBox x:Name="OverlaySecBox" Grid.Column="1" Style="{StaticResource InputBox}" Margin="0,0,16,0"
+                                 TextChanged="OverlaySecBox_TextChanged"/>
+                        <TextBlock Grid.Column="2" Text="弹窗停留" Style="{StaticResource TBody}" VerticalAlignment="Center"/>
+                        <TextBox x:Name="PopupSecBox" Grid.Column="3" Style="{StaticResource InputBox}"
+                                 TextChanged="PopupSecBox_TextChanged"/>
+                    </Grid>
+                    <CheckBox x:Name="SaveToggle" Style="{StaticResource Switch}" Content="文件保存到桌面（关闭则保存到应用目录）"
+                              Margin="0,0,0,8" Checked="SaveToggle_Toggled" Unchecked="SaveToggle_Toggled"/>
+                    <TextBlock Text="全屏课件进程名（逗号分隔）" Style="{StaticResource TCaption}" Margin="0,8,0,4"/>
+                    <TextBox x:Name="ProcBox" Style="{StaticResource InputBox}" TextChanged="ProcBox_TextChanged"/>
+                </StackPanel>
+            </Border>
+
+            <!-- 权限 -->
+            <TextBlock Text="权限与隐私" Style="{StaticResource TTitle}" Margin="0,14,0,12"/>
+            <Border Style="{StaticResource Card}">
+                <StackPanel>
+                    <CheckBox x:Name="AllowVolumeToggle" Style="{StaticResource Switch}" Content="允许远程调节音量 / 静音"
+                              Margin="0,0,0,12" Checked="AllowVolumeToggle_Toggled" Unchecked="AllowVolumeToggle_Toggled"/>
+                    <CheckBox x:Name="AllowLockToggle" Style="{StaticResource Switch}" Content="允许远程锁屏 / 熄屏"
+                              Margin="0,0,0,12" Checked="AllowLockToggle_Toggled" Unchecked="AllowLockToggle_Toggled"/>
+                    <CheckBox x:Name="AllowPowerToggle" Style="{StaticResource Switch}" Content="允许远程关机 / 重启（高危，默认关闭）"
+                              Margin="0,0,0,12" Checked="AllowPowerToggle_Toggled" Unchecked="AllowPowerToggle_Toggled"/>
+                    <CheckBox x:Name="AllowCameraToggle" Style="{StaticResource Switch}" Content="允许远程拍照回传（隐私敏感，默认关闭）"
+                              Margin="0,0,0,12" Checked="AllowCameraToggle_Toggled" Unchecked="AllowCameraToggle_Toggled"/>
+                    <CheckBox x:Name="AllowClipboardToggle" Style="{StaticResource Switch}" Content="剪贴板双向同步"
+                              Margin="0,0,0,12" Checked="AllowClipboardToggle_Toggled" Unchecked="AllowClipboardToggle_Toggled"/>
+                    <CheckBox x:Name="DuckingToggle" Style="{StaticResource Switch}" Content="朗读时自动压低其他声音"
+                              Margin="0,0,0,12" Checked="DuckingToggle_Toggled" Unchecked="DuckingToggle_Toggled"/>
+                    <CheckBox x:Name="TelemetryToggle" Style="{StaticResource Switch}" Content="匿名遥测（仅版本计数，可关闭）"
+                              Checked="TelemetryToggle_Toggled" Unchecked="TelemetryToggle_Toggled"/>
+                </StackPanel>
+            </Border>
+
+            <!-- 自启 -->
+            <TextBlock Text="开机自启" Style="{StaticResource TTitle}" Margin="0,14,0,12"/>
+            <Border Style="{StaticResource Card}">
+                <StackPanel>
+                    <CheckBox x:Name="AutoStartToggle" Style="{StaticResource Switch}" Content="开机自动运行（静默驻留托盘）"
+                              Checked="AutoStartToggle_Toggled" Unchecked="AutoStartToggle_Toggled"/>
+                    <TextBlock x:Name="AutoStartHint" Style="{StaticResource TCaption}" Margin="0,10,0,0"/>
+                </StackPanel>
+            </Border>
+
+            <!-- 账号安全 -->
+            <TextBlock Text="账号安全" Style="{StaticResource TTitle}" Margin="0,14,0,12"/>
+            <Border Style="{StaticResource Card}">
+                <StackPanel>
+                    <TextBlock Text="为绑定教师生成一次性密码重置码（30 分钟有效）。持有设备即身份证明。"
+                               Style="{StaticResource TCaption}" Margin="0,0,0,10"/>
+                    <Button x:Name="ResetCodeBtn" Style="{StaticResource BtnTonal}" Content="🔑 生成密码重置码"
+                            Click="ResetCodeBtn_Click"/>
+                </StackPanel>
+            </Border>
+
+        </StackPanel>
+    </ScrollViewer>
+</UserControl>

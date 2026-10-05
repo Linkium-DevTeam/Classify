@@ -1,0 +1,48 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <!-- 带 Windows SDK 版本的 TFM：仅为摄像头 MediaCapture 引入官方 WinRT 投影，不涉及 WinUI/WinAppSDK -->
+    <TargetFramework>net10.0-windows10.0.19041.0</TargetFramework>
+    <TargetPlatformMinVersion>10.0.17763.0</TargetPlatformMinVersion>
+    <UseWPF>true</UseWPF>
+    <RootNamespace>Classify</RootNamespace>
+    <AssemblyName>Classify</AssemblyName>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <ApplicationIcon>Assets\app.ico</ApplicationIcon>
+    <!-- 框架依赖发布：安装器负责补装 .NET Desktop Runtime；应用目录仅 ~20MB，自动更新轻量 -->
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+    <SelfContained>false</SelfContained>
+    <Nullable>enable</Nullable>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <LangVersion>latest</LangVersion>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Version>3.6.2</Version>
+    <StartupObject>Classify.Program</StartupObject>
+    <Product>Classify</Product>
+    <Company>Linkium DevTeam</Company>
+    <Copyright>© 2026 Linkium DevTeam</Copyright>
+    <Description>教师喊话 · 文件快传 · 课堂助手（希沃一体机适配）</Description>
+    <SatelliteResourceLanguages>zh-CN</SatelliteResourceLanguages>
+    <DebugType>none</DebugType>
+    <GenerateDocumentationFile>false</GenerateDocumentationFile>
+    <EnableWindowsTargeting>true</EnableWindowsTargeting>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="QRCoder" Version="1.4.3" />
+    <PackageReference Include="System.Management" Version="10.0.0" />
+    <PackageReference Include="System.Speech" Version="10.0.12" />
+  </ItemGroup>
+
+  <!-- WindowsDesktop SDK 下的隐式 using 集不含 System.IO / System.Net.Http，显式补全 -->
+  <ItemGroup>
+    <Using Include="System.IO" />
+    <Using Include="System.Net.Http" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Content Include="Assets\**\*" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+</Project>

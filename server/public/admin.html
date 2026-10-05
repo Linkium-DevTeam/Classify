@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Classify · 开发者控制台</title>
+<meta name="robots" content="noindex">
+<link rel="icon" href="/icons/favicon-32.png" sizes="32x32">
+<link rel="stylesheet" href="/css/app.css">
+<style>
+  .wrap { max-width: 860px; margin: 0 auto; padding: 18px 14px 60px; }
+  .topbar { display: flex; align-items: center; gap: 12px; margin-bottom: 14px; }
+  .topbar img { width: 40px; height: 40px; }
+  .topbar b { font-size: 18px; }
+  .topbar .spacer { flex: 1; }
+  .grid2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 12px; }
+  .stat { border: 1px solid var(--outline-var); border-radius: var(--r-m); padding: 12px 14px; }
+  .stat b { font-size: 22px; display: block; }
+  .stat span { font-size: 12px; color: var(--on-surface-var); }
+  .dev-item { padding: 8px 10px; border-radius: var(--r-s); margin-bottom: 6px;
+    background: color-mix(in srgb, var(--on-surface) 4%, transparent); }
+  .dev-item .row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .dev-logs { white-space: pre-wrap; word-break: break-all; opacity: .75; font-size: 11px;
+    max-height: 140px; overflow: auto; margin: 4px 0 0; }
+  .banned-tag { color: var(--err); font-weight: 700; }
+  .denied { text-align: center; padding: 60px 20px; }
+  .denied h2 { font-size: 20px; margin: 12px 0 8px; }
+  textarea { width: 100%; }
+  details { margin-top: 8px; }
+  summary { cursor: pointer; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="topbar">
+    <img src="/icons/icon-192.png" alt="">
+    <b>开发者控制台</b>
+    <span class="body-s on-var">/admin · 仅部署者账号</span>
+    <span class="spacer"></span>
+    <a class="btn btn-tonal btn-sm" href="/" target="_blank" rel="noopener">打开教师端 ↗</a>
+  </div>
+
+  <div id="gate" class="card denied">
+    <h2>🔒 验证开发者身份中…</h2>
+    <p class="body-m on-var">此控制台仅限部署者账号访问。请先在教师端登录，或联系 support@linkium.top。</p>
+    <a class="btn btn-filled" href="/">去教师端登录</a>
+  </div>
+
+  <div id="console" hidden>
+    <div class="grid2" id="stats"></div>
+
+    <div class="card" style="margin-top:12px">
+      <h2 class="headline-s">📢 服务公告</h2>
+      <p class="body-s on-var" style="margin:0 0 8px">公告显示在所有 WebUI 顶部横幅与教室电脑托盘气泡，过期自动下线。</p>
+      <textarea id="bc-text" rows="3" maxlength="300"
+        placeholder="例如：本周六 02:00-04:00 服务维护，期间喊话可能延迟"></textarea>
+      <div class="row" style="margin-top:8px;gap:8px;flex-wrap:wrap">
+        <select id="bc-level" class="cb-select">
+          <option value="info">通知</option><option value="warn">提醒</option><option value="critical">紧急</option>
+        </select>
+        <select id="bc-hours" class="cb-select">
+          <option value="24">24 小时</option><option value="72" selected>3 天</option>
+          <option value="168">7 天</option><option value="720">30 天</option>
+        </select>
+        <button id="bc-pub" class="btn btn-filled btn-sm">发布 / 更新公告</button>
+        <button id="bc-clear" class="btn btn-outline-danger btn-sm">撤下公告</button>
+      </div>
+    </div>
+
+    <div class="card" style="margin-top:12px">
+      <h2 class="headline-s">🚪 注册开关</h2>
+      <p class="body-s on-var" id="reg-state" style="margin:0 0 8px">读取中…</p>
+      <button id="reg-toggle" class="btn btn-tonal">切换</button>
+    </div>
+
+    <div class="card" style="margin-top:12px">
+      <h2 class="headline-s">🔑 密码重置码</h2>
+      <div class="row" style="gap:8px;flex-wrap:wrap">
+        <input id="rc-username" class="cd-input" style="flex:1;min-width:140px" placeholder="用户名">
+        <button id="rc-gen" class="btn btn-tonal">生成一次性重置码</button>
+      </div>
+      <p class="body-s on-var" id="rc-out" style="margin:6px 0 0"></p>
+    </div>
+
+    <div class="card" style="margin-top:12px">
+      <h2 class="headline-s">🧹 看板快照缓存</h2>
+      <p class="body-s on-var" style="margin:0 0 8px">云端暂存的看板快照（48 小时自动过期，仅座号）。用于隐私应急或故障排查。</p>
+      <button id="rb-purge" class="btn btn-outline-danger btn-sm">立即清空全部看板快照</button>
+    </div>
+
+    <div class="card" style="margin-top:12px">
+      <h2 class="headline-s">👥 用户列表</h2>
+      <p class="body-s on-var" style="margin:0 0 8px">封禁 / 解封 / 删除（级联清除该用户的设备与数据）/ 生成重置码。</p>
+      <div id="user-list">加载中…</div>
+    </div>
+
+    <div class="card" style="margin-top:12px">
+      <h2 class="headline-s">🖥️ 设备列表</h2>
+      <div id="dev-list" class="body-s on-var">加载中…</div>
+    </div>
+
+    <div class="card" style="margin-top:12px">
+      <h2 class="headline-s">💬 用户反馈（30 天内）</h2>
+      <div id="fb-list" class="body-s on-var">加载中…</div>
+    </div>
+
+    <div class="card" style="margin-top:12px">
+      <h2 class="headline-s">💥 崩溃上报（7 天）</h2>
+      <div id="crash-list" class="body-s on-var">加载中…</div>
+    </div>
+  </div>
+</div>
+<div id="toast" class="snackbar" hidden></div>
+<script src="/js/admin.js"></script>
+</body>
+</html>
