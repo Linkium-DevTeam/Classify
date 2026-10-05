@@ -38,4 +38,4 @@ dotnet publish -c Release -r win-x64 --self-contained true -p:PublishSingleFile=
 
 ## 许可证
 
-[MIT](LICENSE)
+[Apache Lisence 2.0](LICENSE)
