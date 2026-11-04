@@ -14,7 +14,8 @@ public sealed partial class ApiService
 
     static ApiService()
     {
-        _http.DefaultRequestHeaders.UserAgent.ParseAdd("Mozilla/5.0 (Windows NT 10.0; Win64; x64) Classify/3.0");
+        _http.DefaultRequestHeaders.UserAgent.ParseAdd(
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Classify/" + LogService.AppVersion);
     }
 
     /// <summary>共享连接处理器：ConnectCallback 按 DoH 解析结果直连 IP（证书仍按域名校验），DoH 失败回退系统 DNS。</summary>

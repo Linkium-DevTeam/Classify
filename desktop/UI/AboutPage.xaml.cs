@@ -41,13 +41,9 @@ public partial class AboutPage : UserControl
         }
     }
 
-    /// <summary>开源版启用 EasiCare 联动前的闭源组件提醒。返回是否继续。</summary>
-    internal static bool EasiCareHelperClosedSourceWarning()
+    private void DonateBtn_Click(object sender, RoutedEventArgs e)
     {
-        var r = System.Windows.MessageBox.Show(
-            "EasiCareHelper 是一个闭源组件（第三方课堂评价工具的本地联动代理）。\n\n启用后，早读看板的加分将尝试写入 EasiCare。是否继续？",
-            "即将启用闭源组件", MessageBoxButton.YesNo, MessageBoxImage.Warning);
-        return r == MessageBoxResult.Yes;
+        new DonateWindow { Owner = Window.GetWindow(this) }.ShowDialog();
     }
 
     private void RepoBtn_Click(object sender, RoutedEventArgs e)
@@ -58,6 +54,15 @@ public partial class AboutPage : UserControl
     private void AfdianBtn_Click(object sender, RoutedEventArgs e)
     {
         Interop.Shell.Open("https://afdian.com/a/linkium");
+    }
+
+    /// <summary>启用 EasiCare 联动前的闭源组件知情提醒。返回是否继续。</summary>
+    internal static bool EasiCareHelperClosedSourceWarning()
+    {
+        var r = System.Windows.MessageBox.Show(
+            "EasiCareHelper 是一个闭源组件（第三方课堂评价工具的本地联动代理）。\n\n启用后，早读看板的加分将尝试写入 EasiCare。是否继续？",
+            "即将启用闭源组件", MessageBoxButton.YesNo, MessageBoxImage.Warning);
+        return r == MessageBoxResult.Yes;
     }
 
     private async void LoadCommunity()
@@ -89,5 +94,15 @@ public partial class AboutPage : UserControl
     {
         if (!Interop.Shell.Open(App.Log.LogDirectory))
             ToastWindow.ShowToast("无法打开日志目录", App.Log.LogDirectory);
+    }
+
+    private async void UpdateBtn_Click(object sender, RoutedEventArgs e)
+    {
+        try { await UpdateService.CheckOnceAsync(manual: true); }
+        catch (Exception ex)
+        {
+            App.Log.Error("手动检查更新失败", ex);
+            ToastWindow.ShowToast("检查更新失败", ex.Message);
+        }
     }
 }

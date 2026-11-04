@@ -19,7 +19,9 @@ jobs:
           dotnet-version: "10.0.x"
 
       - name: Publish (framework-dependent, win-x64)
-        run: dotnet publish desktop/Classify.csproj -c Release -r win-x64 --self-contained false -p:PublishReadyToRun=false -o publish
+        run: >
+          dotnet publish desktop/Classify.csproj -c Release -r win-x64
+          --self-contained false -p:DebugType=none -o publish
 
       - name: Pack zip
         shell: pwsh

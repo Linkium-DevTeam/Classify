@@ -1,13 +1,13 @@
 using System.IO.Compression;
-using System.Net;
-using System.Net.Sockets;
+using System.Net.Http;
 using System.Security.Cryptography;
 using System.Text.Json;
 using System.Windows;
+using System.Windows.Controls;
+using System.Windows.Media;
 
 namespace Classify.Services;
 
-/// <summary>服务端清单（闭源渠道）。开源版走 GitHub Releases，但保留该类型以兼容 ApiService。</summary>
 public sealed class UpdateManifest
 {
     public string Version { get; set; } = "";
@@ -16,29 +16,19 @@ public sealed class UpdateManifest
     public string Notes { get; set; } = "";
 }
 
-public sealed class GitHubRelease
-{
-    public string Version { get; set; } = "";
-    public string Changelog { get; set; } = "";
-    public string AssetUrl { get; set; } = "";
-    public long Size { get; set; }
-}
-
 /// <summary>
-/// 自动更新（开源版）：以 GitHub Releases 为唯一来源。
-/// 非静默（默认）：发现新版本 → 弹窗展示 Release changelog → 不更新 / 闲时更新 / 立即更新。
-/// 静默（用户在设置中开启“自动更新”后）：发现即下载换装，不打扰。
-/// 下载按 镜像 → 直连 链路重试（国内访问 GitHub Release 资产经常被限）；
-/// API 访问经 DoH 解析真实 IP（SNI/Host 不变），防 DNS 污染。
-/// 换装：zip → SHA256（Git Blob 哈希，与 Release 校验和一致）→ 解压 staging →
-/// 写 pending 标记 → 退出/下次启动由伴生进程换装（见 UpdateSwap）。
+/// 自动更新（下载侧）：
+/// - 默认“询问”：发现新版本 → 展示 changelog → 不更新 / 闲时更新 / 立即更新；
+/// - 托盘开启“自动更新（静默）”后：发现即下载，校验通过后写 pending 并退出换装；
+/// - 下载 → SHA256 校验 → 安全解压到 staging → 写 pending → 退出；
+///   换装由伴生进程（或下次启动的主进程）完成，主进程零 shell、零子进程。
 /// </summary>
 public sealed class UpdateService
 {
-    public const string Repo = "Linkium-DevTeam/Classify";
-    private static readonly string[] Mirrors = { "", "https://ghfast.top/", "https://gh-proxy.com/" };
+    private static readonly ApiService Api = new();
     private static CancellationTokenSource? _cts;
-    private static volatile bool _busy;
+    private static int _checking;
+    private static volatile bool _dialogOpen;
 
     public static void Start()
     {
@@ -46,6 +36,7 @@ public sealed class UpdateService
         _cts = new CancellationTokenSource();
         _ = Task.Run(() => Loop(_cts.Token));
     }
+
     public static void Stop() => _cts?.Cancel();
 
     private static async Task Loop(CancellationToken ct)
@@ -53,255 +44,303 @@ public sealed class UpdateService
         try { await Task.Delay(TimeSpan.FromSeconds(90), ct); } catch { return; }
         while (!ct.IsCancellationRequested)
         {
-            try { await CheckOnceAsync(manual: false, ct); }
+            var postponed = false;
+            try { postponed = await CheckOnceAsync(manual: false, ct); }
             catch (OperationCanceledException) { return; }
             catch (Exception ex) { App.Log.Aggregate("自动更新", ex); }
-            try { await Task.Delay(TimeSpan.FromHours(6), ct); } catch { return; }
+
+            // 低于服务端最低版本 → 15 分钟；课堂中发现了更新 → 20 分钟后再试；否则 6 小时
+            var belowMin = ApiService.ServerMinVersion is { } min
+                && Version.TryParse(min, out var mv)
+                && Version.TryParse(LogService.AppVersion, out var cv)
+                && cv < mv;
+            var delay = belowMin ? TimeSpan.FromMinutes(15)
+                : postponed ? TimeSpan.FromMinutes(20)
+                : TimeSpan.FromHours(6);
+            try { await Task.Delay(delay, ct); } catch { return; }
         }
     }
 
-    public static async Task CheckOnceAsync(bool manual, CancellationToken ct = default)
+    /// <summary>检查一次。返回 true 表示“有更新但因课堂中而推迟提示”。</summary>
+    public static async Task<bool> CheckOnceAsync(bool manual = false, CancellationToken ct = default)
     {
-        if (_busy) return;
-        _busy = true;
+        if (_dialogOpen) return false;
+        if (Interlocked.Exchange(ref _checking, 1) == 1) return false;
         try
         {
-            var rel = await FetchLatestAsync(ct);
-            if (rel is null)
+            // 同步服务端最低版本要求（决定后续检查节奏）；自定义部署走当前端点
+            try { await Api.GetVersionAsync(ServerEndpoints.Current); } catch { }
+
+            var manifest = await Api.GetUpdateLatestAsync();
+            if (manifest is null)
             {
-                if (manual) Toast("检查更新失败", "无法连接 GitHub（可稍后重试）");
-                return;
+                if (manual) Toast("检查更新失败", "无法获取版本信息");
+                return false;
             }
             var current = LogService.AppVersion;
-            if (!Version.TryParse(rel.Version, out var nv) ||
-                !Version.TryParse(current, out var cur) || nv <= cur)
+            if (!Version.TryParse(manifest.Version, out var newer) ||
+                !Version.TryParse(current, out var cur) || newer <= cur)
             {
                 if (manual) Toast("检查更新", "已是最新版本 " + current);
-                return;
+                return false;
             }
-            if (!manual && rel.Version == SettingsService.Instance.Values.SkippedVersion) return;
-            if (UpdateSwap.Pending()) return; // 上一包未消费完，不叠加
+            if (!manual && manifest.Version == SettingsService.Instance.Values.SkippedVersion) return false;
+            if (UpdateSwap.Pending()) return false; // 上一包未消费完，不叠加
+            if (!IsSafeUrl(manifest.Url))
+            {
+                App.Log.Error("更新清单 URL 不是 https，已拒绝");
+                return false;
+            }
+            if (!IsSha256(manifest.Sha256))
+            {
+                App.Log.Error("更新清单 sha256 格式无效，已拒绝");
+                return false;
+            }
 
             if (SettingsService.Instance.Values.AutoUpdateSilent)
             {
-                await DownloadAndStageAsync(rel, ct);
-                UpdateSwap.WritePending(UpdateSwap.Staging, AppContext.BaseDirectory, rel.Version);
-                ExitForUpdate();
-                return;
+                App.Log.Info($"发现新版本 {manifest.Version}（当前 {current}），静默下载…");
+                if (await DownloadAndStageAsync(manifest, ct))
+                {
+                    UpdateSwap.WritePending(UpdateSwap.Staging, AppContext.BaseDirectory, manifest.Version);
+                    ExitForUpdate(manifest.Version);
+                }
+                return false;
             }
 
-            // 非静默：UI 线程弹更新对话框（changelog + 三按钮）
-            App.Current.Dispatcher.Invoke(() => ShowUpdateDialog(rel, manual));
-        }
-        finally { _busy = false; }
-    }
-
-    private static async Task<GitHubRelease?> FetchLatestAsync(CancellationToken ct)
-    {
-        using var http = await GitHubApiAsync(ct);
-        using var resp = await http.GetAsync($"https://api.github.com/repos/{Repo}/releases/latest", ct);
-        if (!resp.IsSuccessStatusCode) return null;
-        using var doc = System.Text.Json.JsonDocument.Parse(await resp.Content.ReadAsStringAsync(ct));
-        var root = doc.RootElement;
-        var ver = (root.GetProperty("tag_name").GetString() ?? "").TrimStart('v', 'V');
-        if (ver.Length == 0) return null;
-        string assetUrl = ""; long size = 0;
-        foreach (var a in root.GetProperty("assets").EnumerateArray())
-        {
-            var nm = a.GetProperty("name").GetString() ?? "";
-            if (nm.StartsWith("Classify-") && nm.EndsWith(".zip"))
+            // 上课中不打断：等下一轮（全屏课件状态由 2 秒轮询维护）
+            if (!manual && ClassDetectService.Instance.InClass)
             {
-                assetUrl = a.GetProperty("browser_download_url").GetString() ?? "";
-                size = a.GetProperty("size").GetInt64(); break;
+                App.Log.Info($"发现新版本 {manifest.Version}，当前正在上课，推迟提示");
+                return true;
             }
+
+            App.Current.Dispatcher.Invoke(() => ShowUpdateDialog(manifest, manual));
+            return false;
         }
-        if (assetUrl.Length == 0) return null;
-        var body = root.TryGetProperty("body", out var b) ? (b.GetString() ?? "") : "";
-        return new GitHubRelease { Version = ver, Changelog = body, AssetUrl = assetUrl, Size = size };
+        finally { Interlocked.Exchange(ref _checking, 0); }
     }
 
-    /// <summary>GitHub API 客户端：DoH 解析 api.github.com 真实 IP 直连（防 DNS 污染，SNI/Host 不变）。</summary>
-    private static async Task<HttpClient> GitHubApiAsync(CancellationToken ct)
-    {
-        var handler = new SocketsHttpHandler();
-        var ips = await DohResolver.ResolveAsync("api.github.com");
-        if (ips is { Length: > 0 })
-        {
-            handler.ConnectCallback = async (ctx, ctk) =>
-            {
-                // DoH 失败时退回系统解析
-                var addrs = await DohResolver.ResolveAsync(ctx.DnsEndPoint.Host);
-                var ep = addrs is { Length: > 0 }
-                    ? (System.Net.EndPoint)new System.Net.IPEndPoint(addrs[0], ctx.DnsEndPoint.Port)
-                    : (System.Net.EndPoint)ctx.DnsEndPoint;
-                var sock = new Socket(ep.AddressFamily, SocketType.Stream, ProtocolType.Tcp);
-                await sock.ConnectAsync(ep, ctk);
-                return new NetworkStream(sock, ownsSocket: true);
-            };
-        }
-        var http = new HttpClient(handler) { Timeout = TimeSpan.FromSeconds(15) };
-        http.DefaultRequestHeaders.UserAgent.ParseAdd("Classify-Updater");
-        http.DefaultRequestHeaders.Accept.ParseAdd("application/vnd.github+json");
-        return http;
-    }
+    private static bool IsSafeUrl(string url) =>
+        Uri.TryCreate(url, UriKind.Absolute, out var uri)
+        && (uri.Scheme == Uri.UriSchemeHttps || (uri.Scheme == Uri.UriSchemeHttp && uri.IsLoopback));
 
-    /// <summary>按 镜像 → 直连 链路下载发布资产。失败（含非 zip 内容）返回 null。</summary>
-    private static async Task<string?> DownloadAssetAsync(GitHubRelease rel, CancellationToken ct)
+    private static bool IsSha256(string value) =>
+        value.Length == 64 && value.All(Uri.IsHexDigit);
+
+    private static async Task<bool> DownloadAndStageAsync(UpdateManifest manifest, CancellationToken ct)
     {
+        App.Log.Info($"下载新版本 {manifest.Version}…");
         var workDir = UpdateSwap.WorkDir;
         Directory.CreateDirectory(workDir);
         var zipPath = Path.Combine(workDir, "package.zip");
-        foreach (var mirror in Mirrors)
-        {
-            try
-            {
-                if (File.Exists(zipPath)) File.Delete(zipPath);
-                using var http = new HttpClient { Timeout = TimeSpan.FromMinutes(10) };
-                http.DefaultRequestHeaders.UserAgent.ParseAdd("Classify-Updater");
-                using var resp = await http.GetAsync(mirror + rel.AssetUrl, HttpCompletionOption.ResponseHeadersRead, ct);
-                if (!resp.IsSuccessStatusCode) continue;
-                await using var src = await resp.Content.ReadAsStreamAsync(ct);
-                await using var dst = File.Create(zipPath);
-                await src.CopyToAsync(dst, ct);
-                return zipPath; // 传输走 HTTPS；版本一致性由版本比较保证
-            }
-            catch (OperationCanceledException) { throw; }
-            catch { }
-        }
-        return null;
-    }
+        if (File.Exists(zipPath)) File.Delete(zipPath);
 
-    private static async Task<bool> DownloadAndStageAsync(GitHubRelease rel, CancellationToken ct)
-    {
-        var zipPath = await DownloadAssetAsync(rel, ct);
-        if (zipPath is null)
+        try
         {
-            Toast("更新下载失败", "镜像与直连均不可用，请稍后重试或到 GitHub Releases 手动下载");
+            using var http = new HttpClient { Timeout = TimeSpan.FromMinutes(10) };
+            using var resp = await http.GetAsync(manifest.Url, HttpCompletionOption.ResponseHeadersRead, ct);
+            resp.EnsureSuccessStatusCode();
+            await using var src = await resp.Content.ReadAsStreamAsync(ct);
+            await using var dst = File.Create(zipPath);
+            await src.CopyToAsync(dst, ct);
+        }
+        catch (Exception ex)
+        {
+            App.Log.Aggregate("更新下载", ex);
+            try { File.Delete(zipPath); } catch { }
             return false;
         }
-        var staging = UpdateSwap.Staging;
-        if (Directory.Exists(staging)) Directory.Delete(staging, true);
-        ZipFile.ExtractToDirectory(zipPath, staging);
-        File.Delete(zipPath);
-        App.Log.Info($"更新 {rel.Version} 已就绪（staging）。");
-        return true;
+
+        try
+        {
+            await using var fs = File.OpenRead(zipPath);
+            var hash = Convert.ToHexString(await SHA256.HashDataAsync(fs, ct)).ToLowerInvariant();
+            if (!string.Equals(hash, manifest.Sha256.Trim().ToLowerInvariant(), StringComparison.Ordinal))
+            {
+                File.Delete(zipPath);
+                App.Log.Error("更新包校验失败（sha256 不匹配），已丢弃");
+                return false;
+            }
+
+            var staging = UpdateSwap.Staging;
+            if (Directory.Exists(staging)) Directory.Delete(staging, true);
+            ExtractZipSafely(zipPath, staging);
+            App.Log.Info($"更新 {manifest.Version} 已就绪（staging）。");
+            return true;
+        }
+        catch (Exception ex)
+        {
+            App.Log.Error("更新包解压失败，已丢弃", ex);
+            try { if (Directory.Exists(UpdateSwap.Staging)) Directory.Delete(UpdateSwap.Staging, true); } catch { }
+            return false;
+        }
+        finally
+        {
+            try { File.Delete(zipPath); } catch { }
+        }
+    }
+
+    /// <summary>防 Zip Slip：逐个条目校验目标路径必须落在 staging 内。</summary>
+    private static void ExtractZipSafely(string zipPath, string destination)
+    {
+        Directory.CreateDirectory(destination);
+        var root = Path.GetFullPath(destination) + Path.DirectorySeparatorChar;
+        using var archive = ZipFile.OpenRead(zipPath);
+        foreach (var entry in archive.Entries)
+        {
+            if (stateIsDirectory(entry)) continue;
+            var target = Path.GetFullPath(Path.Combine(destination, entry.FullName));
+            if (!target.StartsWith(root, StringComparison.OrdinalIgnoreCase))
+                throw new InvalidDataException("更新包含非法路径：" + entry.FullName);
+            Directory.CreateDirectory(Path.GetDirectoryName(target)!);
+            entry.ExtractToFile(target, overwrite: true);
+        }
+
+        static bool stateIsDirectory(ZipArchiveEntry e) =>
+            e.FullName.EndsWith('/') || e.FullName.EndsWith('\\') || string.IsNullOrEmpty(e.Name);
     }
 
     /// <summary>非静默更新对话框：changelog + 不更新 / 闲时更新 / 立即更新。</summary>
-    private static void ShowUpdateDialog(GitHubRelease rel, bool manual)
+    private static void ShowUpdateDialog(UpdateManifest manifest, bool manual)
     {
-        var changelog = new System.Windows.Controls.TextBox
+        if (_dialogOpen) return;
+        _dialogOpen = true;
+
+        var changelog = new TextBox
         {
-            Text = string.IsNullOrWhiteSpace(rel.Changelog) ? "（无更新说明）" : rel.Changelog,
+            Text = string.IsNullOrWhiteSpace(manifest.Notes) ? "（无更新说明）" : manifest.Notes,
             IsReadOnly = true,
             TextWrapping = TextWrapping.Wrap,
-            VerticalScrollBarVisibility = System.Windows.Controls.ScrollBarVisibility.Auto,
+            VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
             Height = 210,
             FontSize = 12.5,
-            Background = System.Windows.Media.Brushes.White,
-            Foreground = System.Windows.Media.Brushes.Black,
+            Background = Brushes.White,
+            Foreground = Brushes.Black,
         };
-        var row = new System.Windows.Controls.StackPanel
+        var status = new TextBlock
         {
-            Orientation = System.Windows.Controls.Orientation.Horizontal,
-            Margin = new Thickness(0, 16, 0, 0),
+            Text = "闲时更新 = 现在下载，下次启动时自动换装，不打断当前课堂。",
+            Margin = new Thickness(0, 12, 0, 0),
+            FontSize = 11,
+            Foreground = Brushes.Gray,
+            TextWrapping = TextWrapping.Wrap,
         };
-        System.Windows.Controls.Button B(string content, bool isDefault = false)
+        var row = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 16, 0, 0) };
+        Button B(string content, bool isDefault = false) => new()
         {
-            var b = new System.Windows.Controls.Button { Content = content, Width = 116, Height = 34, Margin = new Thickness(0, 0, 10, 0), IsDefault = isDefault };
-            return b;
-        }
+            Content = content,
+            Width = 116,
+            Height = 34,
+            Margin = new Thickness(0, 0, 10, 0),
+            IsDefault = isDefault,
+        };
         var bSkip = B("不更新");
         var bIdle = B("闲时更新");
-        var bNow = B("立即更新", isDefault: true);
-        row.Children.Add(bSkip); row.Children.Add(bIdle); row.Children.Add(bNow);
+        var bNow = B("立即更新", true);
+        row.Children.Add(bSkip);
+        row.Children.Add(bIdle);
+        row.Children.Add(bNow);
 
-        var panel = new System.Windows.Controls.StackPanel { Margin = new Thickness(24) };
-        panel.Children.Add(new System.Windows.Controls.TextBlock
+        var panel = new StackPanel { Margin = new Thickness(24) };
+        panel.Children.Add(new TextBlock
         {
-            Text = $"发现新版本 v{rel.Version}（当前 v{LogService.AppVersion}）",
-            FontSize = 18, FontWeight = FontWeights.Bold,
+            Text = $"发现新版本 v{manifest.Version}（当前 v{LogService.AppVersion}）",
+            FontSize = 18,
+            FontWeight = FontWeights.Bold,
         });
-        panel.Children.Add(new System.Windows.Controls.TextBlock
+        panel.Children.Add(new TextBlock
         {
-            Text = "更新说明（来自 GitHub Release）：",
-            Margin = new Thickness(0, 12, 0, 6), FontSize = 12.5,
-            Foreground = System.Windows.Media.Brushes.Gray,
+            Text = "更新说明：",
+            Margin = new Thickness(0, 12, 0, 6),
+            FontSize = 12.5,
+            Foreground = Brushes.Gray,
         });
         panel.Children.Add(changelog);
         panel.Children.Add(row);
-        panel.Children.Add(new System.Windows.Controls.TextBlock
-        {
-            Text = "闲时更新 = 现在下载，下次启动时自动换装，不打断当前课堂。",
-            Margin = new Thickness(0, 12, 0, 0), FontSize = 11,
-            Foreground = System.Windows.Media.Brushes.Gray, TextWrapping = TextWrapping.Wrap,
-        });
+        panel.Children.Add(status);
 
         var win = new Window
         {
             Title = "Classify · 软件更新",
             Width = 560,
-            SizeToContent = System.Windows.SizeToContent.Height,
+            SizeToContent = SizeToContent.Height,
             WindowStartupLocation = WindowStartupLocation.CenterScreen,
             ResizeMode = ResizeMode.NoResize,
             Topmost = true,
             Content = panel,
         };
-        win.Closed += (_, _) => _busy = false;
+        win.Closed += (_, _) => _dialogOpen = false;
+
+        void SetBusy(string text)
+        {
+            bSkip.IsEnabled = bIdle.IsEnabled = bNow.IsEnabled = false;
+            status.Text = text;
+        }
+
+        void SetIdle(string text)
+        {
+            bSkip.IsEnabled = bIdle.IsEnabled = bNow.IsEnabled = true;
+            status.Text = text;
+        }
 
         bSkip.Click += (_, _) =>
         {
-            SettingsService.Instance.Values.SkippedVersion = rel.Version;
+            SettingsService.Instance.Values.SkippedVersion = manifest.Version;
             SettingsService.Instance.Save();
             win.Close();
         };
-        bIdle.Click += (_, _) =>
+
+        bIdle.Click += async (_, _) =>
         {
-            win.Close();
-            Toast("闲时更新", "正在下载，完成后将在下次启动时生效");
-            _ = Task.Run(async () =>
+            SetBusy("正在下载…完成后将在下次启动 Classify 时换装。");
+            try
             {
-                try
+                if (await DownloadAndStageAsync(manifest, CancellationToken.None))
                 {
-                    if (await DownloadAndStageAsync(rel, CancellationToken.None))
-                    {
-                        UpdateSwap.WritePending(UpdateSwap.Staging, AppContext.BaseDirectory, rel.Version);
-                        Toast("更新已就绪", "v" + rel.Version + " 将在下次启动 Classify 时生效");
-                    }
-                    else Toast("更新下载失败", "请稍后在「检查更新」中重试");
+                    UpdateSwap.WritePending(UpdateSwap.Staging, AppContext.BaseDirectory, manifest.Version);
+                    Toast("更新已就绪", "v" + manifest.Version + " 将在下次启动 Classify 时生效");
+                    win.Close();
                 }
-                catch (Exception ex) { App.Log.Aggregate("闲时更新", ex); Toast("更新失败", ex.Message); }
-            });
+                else SetIdle("下载或校验失败，请稍后重试。");
+            }
+            catch (Exception ex)
+            {
+                App.Log.Aggregate("闲时更新", ex);
+                SetIdle("更新失败：" + ex.Message);
+            }
         };
-        bNow.Click += (_, _) =>
+
+        bNow.Click += async (_, _) =>
         {
-            win.Close();
-            Toast("立即更新", "正在下载，完成后将自动重启换装");
-            _ = Task.Run(async () =>
+            SetBusy("正在下载…完成后将自动重启换装。");
+            try
             {
-                try
+                if (await DownloadAndStageAsync(manifest, CancellationToken.None))
                 {
-                    if (await DownloadAndStageAsync(rel, CancellationToken.None))
-                    {
-                        UpdateSwap.WritePending(UpdateSwap.Staging, AppContext.BaseDirectory, rel.Version);
-                        ExitForUpdate();
-                    }
-                    else Toast("更新下载失败", "请稍后在「检查更新」中重试");
+                    UpdateSwap.WritePending(UpdateSwap.Staging, AppContext.BaseDirectory, manifest.Version);
+                    ExitForUpdate(manifest.Version);
                 }
-                catch (Exception ex) { App.Log.Aggregate("立即更新", ex); Toast("更新失败", ex.Message); }
-            });
+                else SetIdle("下载或校验失败，请稍后重试。");
+            }
+            catch (Exception ex)
+            {
+                App.Log.Aggregate("立即更新", ex);
+                SetIdle("更新失败：" + ex.Message);
+            }
         };
+
         win.Show();
     }
 
     private static void Toast(string title, string text) =>
         App.Current.Dispatcher.Invoke(() => Classify.UI.ToastWindow.ShowToast(title, text));
 
-    /// <summary>计划内退出：主进程退出后由伴生/看门狗完成换装并拉起新版本。</summary>
-    private static void ExitForUpdate()
+    /// <summary>计划内退出：pending 已写好，伴生/下次启动完成换装。</summary>
+    private static void ExitForUpdate(string version)
     {
-        App.Log.Info($"更新换装：退出以应用新版本。");
-        MetricsService.MarkCleanExit();
+        App.Log.Info($"更新换装：退出以应用新版本 {version}。");
+        MetricsService.MarkCleanExit(); // 计划内退出，不报崩溃
         Environment.Exit(0);
     }
 }
@@ -310,8 +349,8 @@ public sealed class UpdateService
 /// 更新交换（执行侧，纯托管文件操作，零 shell、零子进程）：
 /// pending.json 记录 staging 与安装目录。伴生进程每轮检查标记并执行换装；
 /// 无伴生时（自启关闭）由下次启动的 App 在初始化前消费。
-/// 运行中的 exe 无法被覆盖但可以被"改名"，故对主程序文件先改名腾出路径再复制，
-/// 残留的 .old 文件在下次换装时顺手清理。
+/// 运行中的 exe 无法被覆盖但可以被“改名”，故对主程序文件先改名腾出路径再复制；
+/// 复制失败会回滚改名，避免把安装目录留在不可启动状态。
 /// </summary>
 public static class UpdateSwap
 {
@@ -320,27 +359,15 @@ public static class UpdateSwap
     public static string WorkDir => Path.Combine(AppPaths.DataDir, "update");
     public static string Staging => Path.Combine(WorkDir, "staging");
     private static string PendingPath => Path.Combine(WorkDir, "pending.json");
+    private static string DoingPath => PendingPath + ".doing";
 
     private static readonly JsonSerializerOptions JsonOpts = new() { WriteIndented = true };
 
-    public static bool Pending() => File.Exists(PendingPath);
+    public static bool Pending() => File.Exists(PendingPath) || File.Exists(DoingPath);
 
     public static PendingUpdate? ReadPending()
     {
-        try
-        {
-            var raw = File.ReadAllText(PendingPath);
-            return JsonSerializer.Deserialize<PendingUpdate>(raw);
-        }
-        catch { return null; }
-    }
-
-    private static PendingUpdate? ReadPendingFrom(string path)
-    {
-        try
-        {
-            return JsonSerializer.Deserialize<PendingUpdate>(File.ReadAllText(path));
-        }
+        try { return JsonSerializer.Deserialize<PendingUpdate>(File.ReadAllText(PendingPath)); }
         catch { return null; }
     }
 
@@ -348,37 +375,50 @@ public static class UpdateSwap
     {
         Directory.CreateDirectory(WorkDir);
         File.WriteAllText(PendingPath,
-            JsonSerializer.Serialize(new PendingUpdate(staging, target, version, DateTimeOffset.Now.ToUnixTimeSeconds()), JsonOpts));
+            JsonSerializer.Serialize(new PendingUpdate(staging, target, version,
+                DateTimeOffset.Now.ToUnixTimeSeconds()), JsonOpts));
     }
 
-    /// <summary>执行换装。返回是否完成（无标记/被他人认领返回 false）。</summary>
+    /// <summary>执行换装。返回是否完成（无标记/被他人认领/失败返回 false）。</summary>
     public static bool Apply(Action<string>? log = null)
     {
-        // 原子认领：pending.json → pending.doing，保证主进程与伴生进程不会同时换装
-        var lockPath = PendingPath + ".doing";
-        try { File.Move(PendingPath, lockPath); }
-        catch { return false; }
-        var pending = ReadPendingFrom(lockPath);
-        if (pending is null) { try { File.Delete(lockPath); } catch { } return false; }
         var say = log ?? (_ => { });
+
+        // 原子认领 pending.json → pending.json.doing，主进程与伴生不会同时换装。
+        // 若只剩 .doing（上次换装中途崩溃），继续完成它。
+        if (File.Exists(PendingPath))
+        {
+            try { File.Move(PendingPath, DoingPath, overwrite: true); }
+            catch { return false; }
+        }
+        else if (!File.Exists(DoingPath)) return false;
+
+        var pending = ReadPendingFrom(DoingPath);
+        if (pending is null)
+        {
+            TryDelete(DoingPath);
+            return false;
+        }
+
         try
         {
             if (!Directory.Exists(pending.Staging))
             {
                 say("staging 不存在，清除标记");
-                File.Delete(lockPath);
+                TryDelete(DoingPath);
                 return false;
             }
+
             // 等主进程退出（互斥体释放），最多 20 秒
-            for (int i = 0; i < 40; i++)
+            for (var i = 0; i < 40; i++)
             {
                 if (MainGone()) break;
                 Thread.Sleep(500);
             }
 
             var targetExe = Path.Combine(pending.Target, "Classify.exe");
-            // 清理上次换装遗留的 .old
-            try { if (File.Exists(targetExe + ".old")) File.Delete(targetExe + ".old"); } catch { }
+            var oldExe = targetExe + ".old";
+            try { if (File.Exists(oldExe)) File.Delete(oldExe); } catch { }
 
             var copied = 0;
             var failed = 0;
@@ -389,30 +429,50 @@ public static class UpdateSwap
                 try
                 {
                     Directory.CreateDirectory(Path.GetDirectoryName(dst)!);
+                    if (string.Equals(dst, targetExe, StringComparison.OrdinalIgnoreCase))
+                    {
+                        // 运行中的主程序：先改名，复制成功才算数；失败立即回滚
+                        if (!TryMoveRunningExe(targetExe, say)) { failed++; continue; }
+                        try { File.Copy(src, dst, overwrite: true); copied++; }
+                        catch
+                        {
+                            TryRestoreRunningExe(targetExe, say);
+                            failed++;
+                        }
+                        continue;
+                    }
                     File.Copy(src, dst, overwrite: true);
                     copied++;
                 }
                 catch (Exception ex)
                 {
-                    // 主程序文件被占用（自身镜像）：改名腾出路径后重试一次
-                    if (string.Equals(dst, targetExe, StringComparison.OrdinalIgnoreCase) && TryMoveRunningExe(dst, say))
-                    {
-                        try { File.Copy(src, dst, overwrite: true); copied++; continue; } catch { }
-                    }
                     failed++;
                     say($"copy failed {rel}: {ex.Message}");
                 }
             }
             say($"update {pending.Version}: copied={copied} failed={failed}");
 
+            // 主程序缺失时优先恢复旧镜像，绝不把安装目录留在半残状态
             if (!File.Exists(targetExe))
             {
-                say("FATAL: Classify.exe 缺失，保留 staging 供排查");
+                TryRestoreRunningExe(targetExe, say);
+                if (!File.Exists(targetExe))
+                {
+                    say("FATAL: Classify.exe 缺失，保留 staging 供排查");
+                    RestorePending();
+                    return false;
+                }
+            }
+
+            if (failed > 0)
+            {
+                say("存在复制失败，保留 staging 并重新排队，稍后重试");
+                RestorePending();
                 return false;
             }
 
             try { Directory.Delete(pending.Staging, true); } catch { }
-            File.Delete(lockPath);
+            TryDelete(DoingPath);
             try { File.WriteAllText(Path.Combine(pending.Target, "UPDATE-SWAP-OK.txt"), pending.Version); } catch { }
             say("swap done");
             return true;
@@ -420,9 +480,32 @@ public static class UpdateSwap
         catch (Exception ex)
         {
             say($"swap error: {ex.Message}");
-            try { File.Delete(lockPath); } catch { }
+            TryRestoreRunningExe(Path.Combine(pending.Target, "Classify.exe"), say);
+            RestorePending();
             return false;
         }
+    }
+
+    private static PendingUpdate? ReadPendingFrom(string path)
+    {
+        try { return JsonSerializer.Deserialize<PendingUpdate>(File.ReadAllText(path)); }
+        catch { return null; }
+    }
+
+    /// <summary>失败时把 .doing 放回 pending，让伴生/下次启动可以重试。</summary>
+    private static void RestorePending()
+    {
+        try
+        {
+            if (File.Exists(DoingPath) && !File.Exists(PendingPath))
+                File.Move(DoingPath, PendingPath, overwrite: true);
+        }
+        catch { }
+    }
+
+    private static void TryDelete(string path)
+    {
+        try { if (File.Exists(path)) File.Delete(path); } catch { }
     }
 
     private static bool MainGone()
@@ -453,5 +536,19 @@ public static class UpdateSwap
             say($"rename running exe failed: {ex.Message}");
             return false;
         }
+    }
+
+    private static void TryRestoreRunningExe(string exePath, Action<string> say)
+    {
+        try
+        {
+            var old = exePath + ".old";
+            if (!File.Exists(exePath) && File.Exists(old))
+            {
+                File.Move(old, exePath);
+                say("restored previous exe from .old");
+            }
+        }
+        catch (Exception ex) { say($"restore exe failed: {ex.Message}"); }
     }
 }

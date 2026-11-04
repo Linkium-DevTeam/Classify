@@ -403,7 +403,7 @@ public sealed class TrayService : INotifyPropertyChanged
             case ID_EASICARE:
                 {
                     var on = !SettingsService.Instance.Values.EasiCareEnabled;
-                    if (on && !UI.AboutPage.EasiCareHelperClosedSourceWarning()) return; // 取消则不变更
+                    if (on && !UI.AboutPage.EasiCareHelperClosedSourceWarning()) return; // 闭源版也提醒一次，知情同意
                     SettingsService.Instance.Values.EasiCareEnabled = on;
                     SettingsService.Instance.Save();
                     break;

@@ -16,7 +16,7 @@
                     <TextBlock Style="{StaticResource TBody}" Margin="0,14,0,0"
                                Text="教师喊话 · 文件快传 · 课堂助手。面向教室一体机（适配希沃交互式一体机等场景），由教师在手机上远程向大屏发送喊话、文件与时钟、看板等课堂表面。"/>
                     <TextBlock Style="{StaticResource TCaption}" Margin="0,8,0,0"
-                               Text="v3 起基于 WPF / .NET 10 重建：更小体积、更稳的托盘与全屏表面、不再依赖 WinUI。"/>
+                               Text="v4 起基于 WPF / .NET 10 重构：模块化 Worker/WebUI、安全的增量更新、更稳的托盘与全屏表面。"/>
                 </StackPanel>
             </Border>
 
@@ -40,7 +40,7 @@
                     <Image x:Name="DevLogo" Width="26" Height="26" Stretch="Uniform"/>
                     <StackPanel Margin="10,0,0,0" VerticalAlignment="Center">
                         <TextBlock Text="Linkium DevTeam" FontSize="12" FontWeight="SemiBold" Foreground="{StaticResource BrushText}"/>
-                        <TextBlock Text="© 2026 · Apache 2.0 开源 · EasiCareHelper 为闭源组件" Style="{StaticResource TCaption}"/>
+                        <TextBlock Text="© 2026 · EasiCareHelper 为闭源组件" Style="{StaticResource TCaption}"/>
                     </StackPanel>
                 </StackPanel>
             </Border>
@@ -49,8 +49,9 @@
                 <Button Style="{StaticResource BtnTonal}" Margin="0,0,10,10" Content="用户协议" Click="AgreementBtn_Click"/>
                 <Button Style="{StaticResource BtnTonal}" Margin="0,0,10,10" Content="隐私政策" Click="PrivacyBtn_Click"/>
                 <Button Style="{StaticResource BtnTonal}" Margin="0,0,10,10" Content="💬 反馈问题" Click="FeedbackBtn_Click"/>
-                
+                <Button Style="{StaticResource BtnTonal}" Margin="0,0,10,10" Content="💖 支持开发者" Click="DonateBtn_Click"/>
                 <Button Style="{StaticResource BtnTonal}" Margin="0,0,10,10" Content="打开日志目录" Click="LogsBtn_Click"/>
+                <Button Style="{StaticResource BtnTonal}" Margin="0,0,10,10" Content="🔄 检查更新" Click="UpdateBtn_Click"/>
             </WrapPanel>
             <TextBlock Style="{StaticResource TCaption}" Margin="0,6,0,0"
                        Text="问题反馈：应用内提交，或邮件 support@linkium.top（附版本号与现象描述可加快定位）"/>

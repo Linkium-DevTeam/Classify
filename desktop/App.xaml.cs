@@ -34,11 +34,15 @@ public partial class App : Application
     {
         base.OnStartup(e);
 
+        DiagnosticsService.Boot("阶段:OnStartup 开始");
         Log.Init();
+        DiagnosticsService.Boot("阶段:日志初始化完成");
         Log.Info(SilentStart ? "应用启动（开机静默自启）" : "应用启动");
         Settings = SettingsService.Load();
         ServerEndpoints.InitFrom(Settings.Values.ServerUrl);
         Log.Info($"设置加载: WizardDone={Settings.Values.WizardDone} path={Settings.FilePath}");
+        DiagnosticsService.Boot("阶段:设置加载完成");
+        DiagnosticsService.OnSettingsLoaded();
 
         // 任何未处理异常都落日志，便于现场排查
         DispatcherUnhandledException += (_, ex) =>
@@ -54,10 +58,12 @@ public partial class App : Application
             ex.SetObserved();
         };
 
+        DiagnosticsService.Boot("阶段:JumpList");
         InitJumpList();
 
         if (!Settings.Values.WizardDone)
         {
+            DiagnosticsService.Boot("阶段:显示首启向导");
             _wizardWindow = new WizardWindow();
             _wizardWindow.Show();
             return;
@@ -65,12 +71,15 @@ public partial class App : Application
 
         if (SilentStart && !OpenRequested)
         {
+            DiagnosticsService.Boot("阶段:启动服务");
             StartServices();
+            DiagnosticsService.Boot("阶段:创建主窗口(静默)");
             _mainWindow = new MainWindow(); // 仅驻留（不 Show），托盘可随时唤起
             Log.Info("静默自启完成，已驻留托盘");
             return;
         }
 
+        DiagnosticsService.Boot("阶段:显示主窗口");
         ShowMainWindow();
     }
 
@@ -179,7 +188,9 @@ public partial class App : Application
             try
             {
                 AutoStartService.WriteWatchdogVbs();
-                if (AutoStartService.IsEnabled) Companion.EnsureRunning();
+                // 伴生进程是本次会话的崩溃看护：无论是否开机自启都拉起；
+                // 用户从托盘主动退出时 SignalExit 会让它一起退出。
+                Companion.EnsureRunning();
                 await Task.Delay(1500);
                 Log.Info($"启动阶段3（看门狗/伴生）{sw.ElapsedMilliseconds}ms");
             }

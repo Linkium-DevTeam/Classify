@@ -465,3 +465,14 @@ a { color: var(--primary); text-decoration: none; }
 .fb-item .fb-logs { white-space: pre-wrap; word-break: break-all; opacity: .75; font-size: 11px; max-height: 120px; overflow: auto; }
 
 .banned-tag { color: var(--err); font-weight: 700; }
+
+/* ---------- 可访问性：键盘焦点（不改变鼠标视觉） ---------- */
+button:focus-visible,
+a:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible,
+[tabindex]:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+}

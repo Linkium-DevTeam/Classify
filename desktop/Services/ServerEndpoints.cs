@@ -9,6 +9,7 @@ public static class ServerEndpoints
 {
     private static readonly string[] Bases =
     {
+        "https://classify.linkium.top",
         "https://ccall.linkium.top",
         "https://classcall.linkium.workers.dev",
     };

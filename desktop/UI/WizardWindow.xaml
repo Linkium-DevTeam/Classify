@@ -44,7 +44,7 @@
                     <StackPanel>
                         <TextBlock Text="连接云端" Style="{StaticResource TTitle}"/>
                         <TextBlock Style="{StaticResource TBody}" Margin="0,8,0,0"
-                                   Text="Classify 通过 Linkium DevTeam 云端中继（ccall.linkium.top）连接你的手机。"/>
+                                   Text="Classify 通过 Linkium DevTeam 云端中继（classify.linkium.top）连接你的手机。"/>
                         <TextBlock Style="{StaticResource TCaption}" Margin="0,6,0,14"
                                    Text="同一台教室电脑可被多位教师绑定；所有数据按教师账号隔离。"/>
                         <TextBox x:Name="NameBox" Style="{StaticResource InputBox}" MaxLength="32"/>
@@ -80,7 +80,7 @@
                         <StackPanel>
                             <TextBlock Text="手机扫码确认" Style="{StaticResource TTitle}"/>
                             <TextBlock Style="{StaticResource TBody}" Margin="0,8,0,0"
-                                       Text="用手机浏览器打开 ccall.linkium.top 并登录，在「设备」页点「扫一扫」扫描左侧二维码，再点「确认绑定」。"/>
+                                       Text="用手机浏览器打开 classify.linkium.top 并登录，在「设备」页点「扫一扫」扫描左侧二维码，再点「确认绑定」。"/>
                         </StackPanel>
                     </Border>
                     <Button x:Name="ManualToggleBtn" Style="{StaticResource BtnGhost}" Content="无法扫码？手动输入配对码 →"

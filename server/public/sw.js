@@ -1,11 +1,21 @@
 /* Classify WebUI Service Worker — 外壳缓存 + API 直通 */
-const CACHE = "cc-shell-v11";
+const CACHE = "cc-shell-v12";
 const SHELL = [
+  "/",
   "/app",
   "/admin",
+  "/lite",
   "/css/app.css",
-  "/js/app.js",
+  "/css/welcome.css",
+  "/js/core.js",
+  "/js/compose.js",
+  "/js/classroom.js",
+  "/js/settings.js",
+  "/js/boot.js",
+  "/js/welcome.js",
   "/js/admin.js",
+  "/lite/lite.css",
+  "/lite/lite.js",
   "/manifest.webmanifest",
   "/icons/icon-192.png",
   "/icons/icon-512.png",
@@ -25,21 +35,39 @@ self.addEventListener("activate", (e) => {
   );
 });
 
+/** 导航请求的缓存键：只接管应用外壳，下载等其它导航交给浏览器 */
+function navKey(pathname) {
+  if (pathname === "/") return "/";
+  if (pathname === "/app" || pathname === "/app/") return "/app";
+  if (pathname === "/admin" || pathname === "/admin/") return "/admin";
+  if (pathname === "/lite" || pathname.startsWith("/lite/")) return "/lite";
+  return null;
+}
+
 self.addEventListener("fetch", (e) => {
   const url = new URL(e.request.url);
-  if (url.pathname.startsWith("/api/") || url.pathname.startsWith("/lite/api/")) return; // API 一律直连，不缓存
+  // 只处理同源请求；API 一律直连，不缓存
+  if (url.origin !== location.origin) return;
+  if (url.pathname.startsWith("/api/") || url.pathname.startsWith("/lite/api/")) return;
+  if (url.pathname.startsWith("/download/")) return;
   if (e.request.method !== "GET") return;
 
-  // 导航请求：网络优先，失败回退外壳（离线可打开）
+  // 导航请求：/app、/lite、/ 网络优先，失败回退各自外壳（离线可打开）
   if (e.request.mode === "navigate") {
+    const key = navKey(url.pathname);
+    if (!key) return; // 非外壳页面（安装包下载等）不拦截
     e.respondWith(
       fetch(e.request)
         .then((r) => {
-          const copy = r.clone();
-          caches.open(CACHE).then((c) => c.put("/app", copy));
+          if (r.ok) {
+            const copy = r.clone();
+            caches.open(CACHE).then((c) => c.put(key, copy));
+          }
           return r;
         })
-        .catch(() => caches.match("/app"))
+        .catch(() =>
+          caches.match(key).then((hit) => hit || caches.match("/app"))
+        )
     );
     return;
   }

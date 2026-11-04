@@ -1,15 +1,13 @@
 # ClassCall Lite — Cloudflare Worker 配置
-# 部署前必读：docs/部署指南.md
+# 部署前必读：docs/DEPLOY.md
 name = "classcall"
-main = "src/worker.js"
+main = "src/index.js"
 compatibility_date = "2025-05-05"
 
-# 自定义域名（classify 为新门户入口；ccall 为历史别名，仍在面板中保留）
-# 自定义域名按需配置（可选）：
+# 自定义域名（按需配置；示例见 docs/DEPLOY.md）
 # routes = [
 #   { pattern = "your-domain.example", custom_domain = true }
 # ]
-
 # 静态资源（教师 WebUI / PWA）
 [assets]
 directory = "./public"

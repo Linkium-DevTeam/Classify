@@ -3,7 +3,7 @@
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
     <!-- 带 Windows SDK 版本的 TFM：仅为摄像头 MediaCapture 引入官方 WinRT 投影，不涉及 WinUI/WinAppSDK -->
-    <TargetFramework>net10.0-windows10.0.19041.0</TargetFramework>
+    <TargetFramework>net10.0-windows10.0.17763.0</TargetFramework>
     <TargetPlatformMinVersion>10.0.17763.0</TargetPlatformMinVersion>
     <UseWPF>true</UseWPF>
     <RootNamespace>Classify</RootNamespace>
@@ -17,7 +17,9 @@
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <LangVersion>latest</LangVersion>
     <ImplicitUsings>enable</ImplicitUsings>
-    <Version>3.6.2</Version>
+    <Version>4.0.0</Version>
+    <!-- 自定义中间目录在仓库外时，仍排除源码树里的历史 obj/bin，避免重复 AssemblyInfo -->
+    <DefaultItemExcludes>$(DefaultItemExcludes);obj/**;bin/**</DefaultItemExcludes>
     <StartupObject>Classify.Program</StartupObject>
     <Product>Classify</Product>
     <Company>Linkium DevTeam</Company>

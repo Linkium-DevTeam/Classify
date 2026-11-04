@@ -1,4 +1,13 @@
 bin/
 obj/
 publish/
+Output/
+node_modules/
+.wrangler/
+.wrangler
+.mimosa/
+*.log
+.tmp-*
 *.user
+Thumbs.db
+.DS_Store
