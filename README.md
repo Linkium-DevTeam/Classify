@@ -8,7 +8,7 @@
 
 | 目录 | 说明 | 技术 |
 |---|---|---|
-| `desktop/` | 教室机端：单文件 WPF 应用（约 300 行），托盘常驻显示设备口令，收到喊话全屏置顶展示 + 本地 TTS 朗读；设备口令由机器指纹派生，每台固定 | WPF (.NET 10) + System.Speech |
+| `desktop/` | 教室机端：单文件 WPF 应用，托盘常驻显示设备口令，收到喊话全屏置顶展示 + 本地 TTS 朗读；口令由机器指纹派生，每台固定 | WPF (.NET 10) + System.Speech |
 | `worker/` | 云端中继：register / poll / send / info 四个接口，KV 取走即删 | Cloudflare Workers + KV |
 
 ## 部署
@@ -18,7 +18,7 @@
 ```bash
 cd worker
 npx wrangler login
-npx wrangler kv namespace create KV    # 将输出的 id 填入 wrangler.toml
+npx wrangler kv namespace create KV    # 把输出的 id 填入 wrangler.toml
 npx wrangler deploy
 ```
 
@@ -27,10 +27,12 @@ npx wrangler deploy
 ```bash
 cd desktop
 dotnet publish -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true
-# 产物：bin/Release/net10.0-windows/win-x64/publish/Clite.exe（单文件）
+# 产物：bin/Release/net10.0-windows/win-x64/publish/Clite.exe（单文件，约 70MB）
 ```
 
-把 `Clite.exe` 放到教室电脑双击即可，托盘里能看到 8 位口令。手机打开 Worker 域名（或在 `desktop/Program.cs` 中修改 `SERVER` 常量指向自建服务端），输入口令发送。
+把 `Clite.exe` 放到教室电脑双击即可，托盘里能看到 8 位口令。手机打开 Worker 域名，输入口令发送。
+
+> 自建服务端：在 `Clite.exe` 同目录放一个 `clite-server.txt`（内容为你的 Worker 地址），或设置环境变量 `CLITE_SERVER`。
 
 ## 支持
 
@@ -38,4 +40,4 @@ dotnet publish -c Release -r win-x64 --self-contained true -p:PublishSingleFile=
 
 ## 许可证
 
-[Apache Lisence 2.0](LICENSE)
+[Apache License 2.0](LICENSE)

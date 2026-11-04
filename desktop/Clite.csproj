@@ -8,7 +8,8 @@
     <AssemblyName>Clite</AssemblyName>
     <Nullable>disable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
-    <Version>1.0.0</Version>
+    <Version>1.1.0</Version>
+    <DefaultItemExcludes>$(DefaultItemExcludes);obj/**;bin/**</DefaultItemExcludes>
     <Product>Classify Lite</Product>
     <Company>Linkium DevTeam</Company>
     <RuntimeIdentifier>win-x64</RuntimeIdentifier>
