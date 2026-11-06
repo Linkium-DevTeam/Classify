@@ -50,6 +50,29 @@ public static class WindowUtil
 
     public static double GetDpiForHwnd(IntPtr hwnd) => Interop.Win32.DpiOfWindow(hwnd);
 
+    /// <summary>
+    /// 用物理像素定位悬浮窗（多显示器/125%/150% 缩放下 WPF 的 DIP Left/Top 容易偏移）。
+    /// syncLogicalSize=true 时同时把 WPF 逻辑尺寸设为物理尺寸/当前 DPI（灵动岛这类固定尺寸窗口用）。
+    /// </summary>
+    public static void PositionPhysical(Window w, int left, int top, int width, int height,
+        bool syncLogicalSize = false)
+    {
+        if (width <= 0 || height <= 0) return;
+        try
+        {
+            var hwnd = Hwnd(w);
+            if (syncLogicalSize)
+            {
+                var dpi = Win32.DpiOfWindow(hwnd);
+                w.Width = width / dpi;
+                w.Height = height / dpi;
+            }
+            Win32.SetWindowPos(hwnd, Win32.HWND_TOPMOST, left, top, width, height,
+                Win32.SWP_NOACTIVATE | Win32.SWP_SHOWWINDOW);
+        }
+        catch (Exception ex) { App.Log.Aggregate("悬浮窗定位", ex); }
+    }
+
     public static void SetTopmost(Window w)
     {
         Win32.SetWindowPos(Hwnd(w), Win32.HWND_TOPMOST, 0, 0, 0, 0,

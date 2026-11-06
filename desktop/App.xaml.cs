@@ -75,6 +75,19 @@ public partial class App : Application
             StartServices();
             DiagnosticsService.Boot("阶段:创建主窗口(静默)");
             _mainWindow = new MainWindow(); // 仅驻留（不 Show），托盘可随时唤起
+            // 托盘不可用（Explorer 未就绪/Shell 异常）时不能让应用“隐身”
+            if (!TrayService.Instance.IsAvailable)
+            {
+                // Explorer 登录慢时托盘会稍后重试成功；等待 5 秒仍失败才显示主窗口，
+                // 避免每次开机都闪出主界面。
+                _ = Task.Run(async () =>
+                {
+                    await Task.Delay(5000);
+                    if (TrayService.Instance.IsAvailable) return;
+                    Log.Error("托盘不可用，静默启动改为显示主窗口", null);
+                    try { App.Current.Dispatcher.BeginInvoke(new Action(() => _mainWindow.Show())); } catch { }
+                });
+            }
             Log.Info("静默自启完成，已驻留托盘");
             return;
         }
@@ -152,12 +165,14 @@ public partial class App : Application
     {
         try { Settings?.Save(); } catch { }
         MetricsService.MarkCleanExit();
+        Companion.SignalExit(); // 正常退出：伴生不要拉起
         base.OnExit(e);
     }
 
     protected override void OnSessionEnding(SessionEndingCancelEventArgs e)
     {
         MetricsService.MarkCleanExit();
+        Companion.SignalExit(); // 系统关机/注销：避免伴生在关机过程中重新拉起
         base.OnSessionEnding(e);
     }
 
@@ -187,7 +202,6 @@ public partial class App : Application
         {
             try
             {
-                AutoStartService.WriteWatchdogVbs();
                 // 伴生进程是本次会话的崩溃看护：无论是否开机自启都拉起；
                 // 用户从托盘主动退出时 SignalExit 会让它一起退出。
                 Companion.EnsureRunning();
@@ -197,39 +211,47 @@ public partial class App : Application
             catch (Exception ex) { Log.Error("延迟初始化失败", ex); }
         });
 
-        ClassDetectService.Instance.Start();
-        AnnouncementService.Instance.Init();
-        TrayService.Instance.Init();
+        // 任一非核心服务初始化失败都不应阻止应用启动（否则托盘/主窗口可能永远不出现）
+        TryStart("上课检测", () => ClassDetectService.Instance.Start());
+        TryStart("喊话队列", () => AnnouncementService.Instance.Init());
+        TryStart("托盘", () => TrayService.Instance.Init());
         if (Settings.Values.IslandEnabled)
-        {
-            try { IslandWindow.ShowDefault(); }
-            catch (Exception ex) { Log.Error("灵动岛启动失败", ex); }
-        }
+            TryStart("灵动岛", () => IslandWindow.ShowDefault());
+
         Log.Info($"启动阶段2（检测/喊话/托盘）{sw.ElapsedMilliseconds}ms");
-        UpdateService.Start();
-        SmartPreclassService.Start();
-        BroadcastService.Start();
-        MetricsService.Start();
+        TryStart("自动更新", () => UpdateService.Start());
+        TryStart("智能候课", () => SmartPreclassService.Start());
+        TryStart("服务公告", () => BroadcastService.Start());
+        TryStart("匿名遥测", () => MetricsService.Start());
 
         // 硬件指纹设备 ID（16 位，重装不变；首次计算后写入设置）
-        HwIdService.EnsureStored();
+        TryStart("硬件指纹", () => HwIdService.EnsureStored());
 
         // 加载 EasiCare 评价缓存队列（离线/令牌过期时缓存的待写入评价）
-        if (SettingsService.Instance.Values.EasiCareEnabled) EasiCareClient.LoadPending();
+        if (SettingsService.Instance.Values.EasiCareEnabled)
+            TryStart("EasiCare 缓存", () => EasiCareClient.LoadPending());
 
         // 匿名遥测由 MetricsService 负责（事件计数每日聚合 + 崩溃检测）
-
         if (!string.IsNullOrWhiteSpace(Settings.Values.ServerUrl)
             && !string.IsNullOrEmpty(Settings.Values.DeviceToken))
         {
-            PollingService.Instance.Start();
+            TryStart("云端连接", () => PollingService.Instance.Start());
         }
+    }
+
+    private static void TryStart(string name, Action action)
+    {
+        try { action(); }
+        catch (Exception ex) { Log.Error($"启动服务失败：{name}", ex); }
     }
 
     /// <summary>统一消息入口：云端轮询 / WebSocket。</summary>
     public static class MessageRouter
     {
         private static bool _inited;
+        private static readonly Queue<string> RecentMids = new();
+        private static readonly HashSet<string> RecentMidSet = new(StringComparer.Ordinal);
+        private static readonly object DedupeGate = new();
 
         public static void Init()
         {
@@ -238,8 +260,23 @@ public partial class App : Application
             PollingService.Instance.MessageReceived += OnMessage;
         }
 
+        /// <summary>WS/长轮询切换或重连后服务端可能重放同一消息；按 mid 去重，避免重复喊话。</summary>
+        private static bool IsDuplicate(string mid)
+        {
+            if (string.IsNullOrEmpty(mid)) return false;
+            lock (DedupeGate)
+            {
+                if (!RecentMidSet.Add(mid)) return true;
+                RecentMids.Enqueue(mid);
+                while (RecentMids.Count > 300)
+                    RecentMidSet.Remove(RecentMids.Dequeue());
+                return false;
+            }
+        }
+
         private static void OnMessage(InboxMessage msg)
         {
+            if (IsDuplicate(msg.Mid)) { Log.Info($"忽略重复消息 mid={msg.Mid}"); return; }
             Log.Info($"收到消息 type={msg.Type} from={msg.From}");
             MetricsService.Incr("msg_" + msg.Type);
             AddActivity(msg);
@@ -259,7 +296,7 @@ public partial class App : Application
                     break;
                 case "cmd":
                     _ = CommandService.Instance.ExecuteAsync(msg.CmdName, msg.CmdValue)
-                        .ContinueWith(_ => ReceiptService.Send(msg.Mid, "displayed"),
+                        .ContinueWith(t => ReceiptService.Send(msg.Mid, t.Result ? "displayed" : "failed"),
                             TaskScheduler.Default);
                     break;
                 case "clipboard":
@@ -403,8 +440,9 @@ public partial class App : Application
                             // 清理上一批投屏图，避免堆积
                             foreach (var old in Directory.GetFiles(dir))
                                 try { File.Delete(old); } catch { }
-                            var ext = Path.GetExtension(name);
-                            if (string.IsNullOrEmpty(ext)) ext = ".png";
+                            var ext = Path.GetExtension(name).ToLowerInvariant();
+                            if (ext is not (".png" or ".jpg" or ".jpeg" or ".gif" or ".bmp"))
+                                ext = ".png"; // WPF 稳定支持的格式；异常内容由查看器跳过
                             var path = Path.Combine(dir, $"cast-{DateTime.Now:yyyyMMdd-HHmmss}{ext}");
                             await new ApiService().DownloadFileAsync(fid, path);
                             _ = Ui.BeginInvoke(new Action(() =>

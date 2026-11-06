@@ -57,7 +57,7 @@ public class ImageShowWindow : Window
             if (e.LeftButton == MouseButtonState.Pressed)
             {
                 if (e.GetPosition(this).X < ActualWidth / 2) ShowAt(_index - 1);
-                else StopShow();
+                else ShowAt(_index + 1);
             }
         };
         KeyDown += (_, e) =>
@@ -109,7 +109,10 @@ public class ImageShowWindow : Window
         }
         catch (Exception ex)
         {
-            App.Log.Error("图片快投加载失败", ex);
+            App.Log.Error("图片快投加载失败，跳过该图", ex);
+            Queue.RemoveAt(_index);
+            if (Queue.Count == 0) StopShow();
+            else ShowAt(_index);
         }
     }
 

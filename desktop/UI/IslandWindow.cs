@@ -207,11 +207,11 @@ public class IslandWindow : Window
             double estimated = text.Sum(c => c > 0x2E80 ? 1.05 : 0.55) * _pillText.FontSize + 48;
             int width = (int)Math.Clamp(estimated * dpi, 320 * dpi, Math.Max(320 * dpi, (wa.Right - wa.Left - 40)));
             int height = (int)(PillHeightDip * dpi);
-            // 吸附屏幕顶端：贴住工作区顶边（留 4px 呼吸缝让圆角完整可见）
-            Width = width / dpi;
-            Height = height / dpi;
-            Left = (wa.Left + Math.Max(0, (wa.Right - wa.Left - width) / 2)) / dpi;
-            Top = (wa.Top + 4 * dpi) / dpi;
+            // 物理像素定位：多显示器 + 非 100% 缩放下 WPF DIP 定位会偏移
+            WindowUtil.PositionPhysical(this,
+                wa.Left + Math.Max(0, (wa.Right - wa.Left - width) / 2),
+                wa.Top + (int)Math.Round(4 * dpi),
+                width, height, syncLogicalSize: true);
 
             // 被其他置顶条（如音乐歌词）/显示变更挤掉时自我恢复（让位期间除外）
             if (!IsVisible && Current == this && !_conceded)

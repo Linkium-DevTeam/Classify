@@ -4,7 +4,7 @@
 
 手机变成教室的遥控器：**远程喊话**（大屏全屏展示 + 语音朗读）、**文件快传**、**图片快投**、**早读看板**、**随机点名**、**课堂时钟**、**智能候课**。为学生隐私设计——学生姓名不出教室电脑，云端只存座位与计分。
 
-> 本仓库为开源版（v4.0.0）。**Lite 极简版**（免安装、8 位口令、零配置）在 [`Lite` 分支](../../tree/Lite)。
+> 本仓库为开源版（v4.0.1）。**Lite 极简版**（免安装、8 位口令、零配置）在 [`Lite` 分支](../../tree/Lite)。
 
 ## 组成
 
@@ -42,8 +42,9 @@ wrangler deploy
 
 ```bash
 cd desktop
-dotnet publish -c Release -r win-x64 --self-contained false
+dotnet publish -c Release -r win-x64 --self-contained true
 # 产物：bin/Release/net10.0-windows/win-x64/publish/
+# 自包含发布体积较大，但教室电脑无需预装 .NET 10 Desktop Runtime，兼容性优先。
 ```
 
 首次启动按向导配置服务端地址，扫码或输入配对令牌绑定教室机。

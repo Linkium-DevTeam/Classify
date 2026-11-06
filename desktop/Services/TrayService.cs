@@ -48,7 +48,10 @@ public sealed class TrayService : INotifyPropertyChanged
 
     private IntPtr _hwnd;
     private IntPtr _icon;
-    private bool _added;
+    private volatile bool _added;
+
+    /// <summary>托盘图标是否真正加入通知区（Explorer 未就绪时可能短暂失败）。</summary>
+    public bool IsAvailable => _added;
 
     [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
     private struct NOTIFYICONDATA
@@ -255,7 +258,6 @@ public sealed class TrayService : INotifyPropertyChanged
                 AppContext.BaseDirectory + "Assets\\logo256.png", 32);
             if (_icon == IntPtr.Zero)
             {
-                Thread.Sleep(1200);
                 _icon = CreateIconFromPng(
                     AppContext.BaseDirectory + "Assets\\logo256.png", 32);
             }
@@ -285,6 +287,8 @@ public sealed class TrayService : INotifyPropertyChanged
             nid.uFlags = NIF_MESSAGE | NIF_ICON | NIF_TIP;
             _added = Shell_NotifyIconW(NIM_ADD, ref nid);
             App.Log.Info($"托盘图标 {(_added ? "创建成功" : "创建失败")}");
+            if (!_added) RetryAddToTray();
+            else EnsureVisibleAfterExplorerRestart();
 
             // 全局热键：Ctrl+Alt+C 唤起主界面；Ctrl+Alt+V 推送本机剪贴板
             RegisterHotKey(_hwnd, HOTKEY_ID_SHOW, MOD_CONTROL | MOD_ALT | MOD_NOREPEAT, 0x43);
@@ -305,6 +309,46 @@ public sealed class TrayService : INotifyPropertyChanged
         {
             App.Log.Error("托盘初始化失败", ex);
         }
+    }
+
+    /// <summary>Explorer 登录慢/重启时 Shell_NotifyIcon 会失败，后台重试直到成功。</summary>
+    private void RetryAddToTray()
+    {
+        _ = Task.Run(async () =>
+        {
+            for (var i = 0; i < 10 && !_added; i++)
+            {
+                try
+                {
+                    await Task.Delay(TimeSpan.FromSeconds(3));
+                    var nid = NewData();
+                    nid.uFlags = NIF_MESSAGE | NIF_ICON | NIF_TIP;
+                    _added = Shell_NotifyIconW(NIM_ADD, ref nid);
+                    if (_added) App.Log.Info("托盘图标重试创建成功");
+                }
+                catch { }
+            }
+        });
+    }
+
+    /// <summary>Explorer 重启后任务栏通知区会清空，定时重新注册（存在即 MODIFY 即可）。</summary>
+    private void EnsureVisibleAfterExplorerRestart()
+    {
+        _ = Task.Run(async () =>
+        {
+            while (true)
+            {
+                try
+                {
+                    await Task.Delay(TimeSpan.FromMinutes(1));
+                    if (!_added) continue;
+                    var nid = NewData();
+                    nid.uFlags = NIF_ICON | NIF_TIP;
+                    if (!Shell_NotifyIconW(NIM_MODIFY, ref nid)) { _added = false; RetryAddToTray(); }
+                }
+                catch { }
+            }
+        });
     }
 
     private NOTIFYICONDATA NewData() => new()
@@ -360,6 +404,12 @@ public sealed class TrayService : INotifyPropertyChanged
 
     private void ShowMenu()
     {
+        try { ShowMenuCore(); }
+        catch (Exception ex) { App.Log.Error("托盘菜单异常", ex); }
+    }
+
+    private void ShowMenuCore()
+    {
         var menu = CreatePopupMenu();
         AppendMenuW(menu, 0 /*MF_STRING*/, (IntPtr)ID_OPEN, "打开主界面");
         AppendMenuW(menu, 0, (IntPtr)ID_TEST, "测试喊话");
@@ -393,7 +443,7 @@ public sealed class TrayService : INotifyPropertyChanged
                 var url = SettingsService.Instance.Values.ServerUrl;
                 if (!string.IsNullOrWhiteSpace(url))
                 {
-                    try { Clipboard.SetText(url); } catch { }
+                    try { App.Ui.BeginInvoke(new Action(() => { try { Clipboard.SetText(url); } catch { } })); } catch { }
                 }
                 break;
             case ID_SETTINGS: App.ShowMainWindowTab("settings"); break;

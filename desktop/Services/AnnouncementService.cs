@@ -29,8 +29,16 @@ public sealed class AnnouncementService
 
     public void Enqueue(AnnItem item)
     {
-        lock (_gate) _queue.Enqueue(item);
-        _signal.Release();
+        var dropped = false;
+        lock (_gate)
+        {
+            // 防止异常刷屏导致队列无限增长；丢弃最旧的一条，最新喊话仍会展示
+            if (_queue.Count >= 50) { _queue.Dequeue(); dropped = true; }
+            _queue.Enqueue(item);
+        }
+        if (dropped) App.Log.Info("喊话队列超过 50 条，已丢弃最旧一条");
+        // 丢掉旧条目时保留它对应的信号量令牌，避免 Dequeue 空队列
+        if (!dropped) _signal.Release();
     }
 
     private async Task ProcessLoop()

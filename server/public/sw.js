@@ -1,5 +1,5 @@
 /* Classify WebUI Service Worker — 外壳缓存 + API 直通 */
-const CACHE = "cc-shell-v12";
+const CACHE = "cc-shell-v13";
 const SHELL = [
   "/",
   "/app",
@@ -24,7 +24,13 @@ const SHELL = [
 ];
 
 self.addEventListener("install", (e) => {
-  e.waitUntil(caches.open(CACHE).then((c) => c.addAll(SHELL)).then(() => self.skipWaiting()));
+  // 逐个 add：任一静态资源 404/部署缺失不应让整个 Service Worker 安装失败
+  e.waitUntil(
+    caches.open(CACHE).then(async (c) => {
+      await Promise.all(SHELL.map((url) => c.add(url).catch(() => {})));
+      return self.skipWaiting();
+    })
+  );
 });
 
 self.addEventListener("activate", (e) => {

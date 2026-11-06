@@ -99,7 +99,9 @@ public sealed class TtsService : INotifyPropertyChanged
                 var azureVoice = voiceId.StartsWith("azure:", StringComparison.Ordinal)
                     ? voiceId["azure:".Length..]
                     : (string.IsNullOrWhiteSpace(settings.AzureVoice) ? "zh-CN-XiaoxiaoNeural" : settings.AzureVoice);
-                var ok = await SpeakAzureAsync(text, azureVoice, settings.AzureRegion, settings.TtsRate);
+                bool ok;
+                try { ok = await SpeakAzureAsync(text, azureVoice, settings.AzureRegion, settings.TtsRate); }
+                catch (Exception ex) { App.Log.Aggregate("Azure TTS", ex); ok = false; }
                 if (ok) { MetricsService.Incr("tts_azure"); return; }
                 App.Log.Error("Azure 语音失败，回退本地引擎", null);
             }
@@ -107,8 +109,13 @@ public sealed class TtsService : INotifyPropertyChanged
             if (voiceId.StartsWith("azure:", StringComparison.Ordinal))
             {
                 // 设置里明确选了 Azure 语音但 Azure 未启用/失败：临时启用直连一次
-                var ok2 = await SpeakAzureAsync(text, voiceId["azure:".Length..],
-                    settings.AzureRegion, settings.TtsRate);
+                bool ok2;
+                try
+                {
+                    ok2 = await SpeakAzureAsync(text, voiceId["azure:".Length..],
+                        settings.AzureRegion, settings.TtsRate);
+                }
+                catch (Exception ex) { App.Log.Aggregate("Azure TTS", ex); ok2 = false; }
                 if (ok2) return;
             }
 
@@ -177,6 +184,9 @@ public sealed class TtsService : INotifyPropertyChanged
     {
         var key = SettingsService.Instance.Values.AzureKey;
         if (string.IsNullOrWhiteSpace(key) || string.IsNullOrWhiteSpace(region)) return false;
+        // 区域会拼进 URL，限制为 Azure 合法区域字符，避免配置错误造成异常 URL
+        if (!System.Text.RegularExpressions.Regex.IsMatch(region, "^[a-z0-9-]{2,32}$")) return false;
+        if (string.IsNullOrWhiteSpace(voice) || voice.Length > 128) return false;
 
         var escaped = System.Security.SecurityElement.Escape(text) ?? "";
         var ratePct = Math.Clamp((int)Math.Round(rate * 100), 50, 200);
@@ -300,6 +310,8 @@ public sealed class TtsService : INotifyPropertyChanged
         if (winner != tcs.Task)
         {
             try { synth.SpeakAsyncCancelAll(); } catch { }
+            try { synth.Dispose(); } catch { }
+            if (_sapi == synth) _sapi = null;
             return false;
         }
         return await tcs.Task;

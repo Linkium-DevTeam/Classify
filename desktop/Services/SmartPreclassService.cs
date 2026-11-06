@@ -126,7 +126,7 @@ public sealed class SmartPreclassService
 
     public static string? ResolveSubject(TimetableDoc tt, string todayKey, int period)
     {
-        if (tt.Overrides.TryGetValue(todayKey, out var list))
+        if (tt.Overrides is not null && tt.Overrides.TryGetValue(todayKey, out var list))
         {
             var o = list.FirstOrDefault(l => l.Period == period);
             if (o != null && !string.IsNullOrWhiteSpace(o.Subject)) return o.Subject;
@@ -136,7 +136,7 @@ public sealed class SmartPreclassService
 
     public static DateTime? ParseStart(DateTime now, TimetableDoc tt, int period)
     {
-        var p = tt.Periods.FirstOrDefault(x => x.P == period);
+        var p = tt.Periods?.FirstOrDefault(x => x.P == period);
         if (p is null) return null;
         if (!TimeSpan.TryParse(p.Start, out var ts)) return null;
         return now.Date + ts;
@@ -145,7 +145,7 @@ public sealed class SmartPreclassService
     /// <summary>课表里显式配置的结束时间（未配置返回 null，由调用方推导）。</summary>
     public static DateTime? ParseEnd(DateTime now, TimetableDoc tt, int period)
     {
-        var p = tt.Periods.FirstOrDefault(x => x.P == period);
+        var p = tt.Periods?.FirstOrDefault(x => x.P == period);
         if (p is null || string.IsNullOrWhiteSpace(p.End)) return null;
         if (!TimeSpan.TryParse(p.End, out var ts)) return null;
         return now.Date + ts;
@@ -368,11 +368,19 @@ public sealed class SmartPreclassService
 
     public static async Task RunForSubjectAsync(string subject, string context)
     {
-        var teacher = await Api.GetSubjectTeacherAsync(subject);
-        if (teacher is null) { ToastWindow.ShowToast("候课", $"没有学科为「{subject}」的教师"); return; }
-        var actions = await Api.GetActionSetByUidAsync(teacher.Uid);
-        if (actions.Count == 0) { ToastWindow.ShowToast("候课", $"{teacher.Username} 未配置候课操作集"); return; }
-        await ExecuteActionsAsync(actions, context, subject);
-        ToastWindow.ShowToast("候课已执行 ✅", context);
+        try
+        {
+            var teacher = await Api.GetSubjectTeacherAsync(subject);
+            if (teacher is null) { ToastWindow.ShowToast("候课", $"没有学科为「{subject}」的教师"); return; }
+            var actions = await Api.GetActionSetByUidAsync(teacher.Uid);
+            if (actions.Count == 0) { ToastWindow.ShowToast("候课", $"{teacher.Username} 未配置候课操作集"); return; }
+            await ExecuteActionsAsync(actions, context, subject);
+            ToastWindow.ShowToast("候课已执行 ✅", context);
+        }
+        catch (Exception ex)
+        {
+            App.Log.Error("候课执行失败：" + context, ex);
+            ToastWindow.ShowToast("候课失败", ex.Message);
+        }
     }
 }

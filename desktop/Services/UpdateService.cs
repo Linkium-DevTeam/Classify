@@ -96,14 +96,25 @@ public sealed class UpdateService
                 App.Log.Error("更新清单 sha256 格式无效，已拒绝");
                 return false;
             }
+            if (!CanWriteAppDir(out var writeError))
+            {
+                App.Log.Error("安装目录不可写，无法更新：" + writeError, null);
+                if (manual) Toast("无法更新", "安装目录不可写，请以管理员身份运行安装程序或修复目录权限。");
+                return false;
+            }
+            if (!HasFreeSpace(600L * 1024 * 1024, out var freeError))
+            {
+                App.Log.Error("磁盘空间不足，无法更新：" + freeError, null);
+                if (manual) Toast("无法更新", freeError);
+                return false;
+            }
 
             if (SettingsService.Instance.Values.AutoUpdateSilent)
             {
                 App.Log.Info($"发现新版本 {manifest.Version}（当前 {current}），静默下载…");
                 if (await DownloadAndStageAsync(manifest, ct))
                 {
-                    UpdateSwap.WritePending(UpdateSwap.Staging, AppContext.BaseDirectory, manifest.Version);
-                    ExitForUpdate(manifest.Version);
+                    if (WritePendingSafe(manifest.Version)) ExitForUpdate(manifest.Version);
                 }
                 return false;
             }
@@ -115,7 +126,8 @@ public sealed class UpdateService
                 return true;
             }
 
-            App.Current.Dispatcher.Invoke(() => ShowUpdateDialog(manifest, manual));
+            try { App.Current.Dispatcher.Invoke(() => ShowUpdateDialog(manifest, manual)); }
+            catch (Exception ex) { App.Log.Aggregate("更新弹窗", ex); }
             return false;
         }
         finally { Interlocked.Exchange(ref _checking, 0); }
@@ -126,21 +138,80 @@ public sealed class UpdateService
         && (uri.Scheme == Uri.UriSchemeHttps || (uri.Scheme == Uri.UriSchemeHttp && uri.IsLoopback));
 
     private static bool IsSha256(string value) =>
-        value.Length == 64 && value.All(Uri.IsHexDigit);
+        !string.IsNullOrEmpty(value) && value.Length == 64 && value.All(Uri.IsHexDigit);
+
+    /// <summary>更新前先验证安装目录可写；Program Files 未授权时给出明确提示，而不是复制到一半失败。</summary>
+    private static bool CanWriteAppDir(out string error)
+    {
+        error = "";
+        try
+        {
+            var probe = Path.Combine(AppContext.BaseDirectory, ".update-write-test-" + Guid.NewGuid().ToString("N"));
+            File.WriteAllText(probe, "ok");
+            File.Delete(probe);
+            return true;
+        }
+        catch (Exception ex)
+        {
+            error = ex.Message;
+            return false;
+        }
+    }
+
+    private static bool HasFreeSpace(long requiredBytes, out string error)
+    {
+        error = "";
+        try
+        {
+            var root = Path.GetPathRoot(UpdateSwap.WorkDir);
+            if (string.IsNullOrEmpty(root)) return true;
+            var free = new DriveInfo(root).AvailableFreeSpace;
+            if (free >= requiredBytes) return true;
+            error = $"磁盘剩余空间不足（需要约 {requiredBytes / 1024 / 1024} MB，当前 {free / 1024 / 1024} MB）。";
+            return false;
+        }
+        catch { return true; } // 无法读取时不要阻止更新
+    }
+
+    private static bool WritePendingSafe(string version)
+    {
+        try
+        {
+            UpdateSwap.WritePending(UpdateSwap.Staging, AppContext.BaseDirectory, version);
+            return true;
+        }
+        catch (Exception ex)
+        {
+            App.Log.Error("写入更新待换装标记失败", ex);
+            Toast("更新失败", "无法写入更新标记：" + ex.Message);
+            return false;
+        }
+    }
 
     private static async Task<bool> DownloadAndStageAsync(UpdateManifest manifest, CancellationToken ct)
     {
         App.Log.Info($"下载新版本 {manifest.Version}…");
         var workDir = UpdateSwap.WorkDir;
-        Directory.CreateDirectory(workDir);
         var zipPath = Path.Combine(workDir, "package.zip");
-        if (File.Exists(zipPath)) File.Delete(zipPath);
-
         try
         {
+            Directory.CreateDirectory(workDir);
+            if (File.Exists(zipPath)) File.Delete(zipPath);
             using var http = new HttpClient { Timeout = TimeSpan.FromMinutes(10) };
             using var resp = await http.GetAsync(manifest.Url, HttpCompletionOption.ResponseHeadersRead, ct);
             resp.EnsureSuccessStatusCode();
+            var length = resp.Content.Headers.ContentLength;
+            if (length is > 1_500L * 1024 * 1024)
+            {
+                App.Log.Error($"更新包过大（{length} bytes），已拒绝");
+                return false;
+            }
+            var required = (length ?? 0) * 3 + 200L * 1024 * 1024;
+            if (!HasFreeSpace(required, out var spaceError))
+            {
+                App.Log.Error("磁盘空间不足：" + spaceError, null);
+                return false;
+            }
             await using var src = await resp.Content.ReadAsStreamAsync(ct);
             await using var dst = File.Create(zipPath);
             await src.CopyToAsync(dst, ct);
@@ -298,7 +369,7 @@ public sealed class UpdateService
             {
                 if (await DownloadAndStageAsync(manifest, CancellationToken.None))
                 {
-                    UpdateSwap.WritePending(UpdateSwap.Staging, AppContext.BaseDirectory, manifest.Version);
+                    if (!WritePendingSafe(manifest.Version)) { SetIdle("无法写入更新标记，请检查磁盘/权限。"); return; }
                     Toast("更新已就绪", "v" + manifest.Version + " 将在下次启动 Classify 时生效");
                     win.Close();
                 }
@@ -318,7 +389,7 @@ public sealed class UpdateService
             {
                 if (await DownloadAndStageAsync(manifest, CancellationToken.None))
                 {
-                    UpdateSwap.WritePending(UpdateSwap.Staging, AppContext.BaseDirectory, manifest.Version);
+                    if (!WritePendingSafe(manifest.Version)) { SetIdle("无法写入更新标记，请检查磁盘/权限。"); return; }
                     ExitForUpdate(manifest.Version);
                 }
                 else SetIdle("下载或校验失败，请稍后重试。");

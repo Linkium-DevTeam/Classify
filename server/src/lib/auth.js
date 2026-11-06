@@ -75,7 +75,9 @@ export async function requireUser(env, req) {
   // 密码重置会递增 pv：旧令牌即刻失效（pv 不匹配 = 已被重置/更换凭据）
   const raw = await env.KV.get(`user:${p.un || ""}`);
   if (!raw) return null;
-  const rec = JSON.parse(raw);
+  let rec;
+  try { rec = JSON.parse(raw); } catch { return null; }
+  if (!rec || typeof rec !== "object") return null;
   if ((rec.pv || 0) !== (p.pv || 0)) return null;
   // 封禁用户：所有需要教师身份的接口一律拒绝（封禁同时递增 pv 使既有令牌失效）
   if (rec.banned) throw new BanError(rec);
@@ -110,15 +112,19 @@ export async function isOwnerUid(env, uid) {
 export async function verifyTurnstile(env, token, ip) {
   if (!env.TURNSTILE_SECRET_KEY) return true; // 未配置 = 未启用
   if (!token) return false;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 5000);
   try {
     const resp = await fetch("https://challenges.cloudflare.com/turnstile/v0/siteverify", {
       method: "POST",
       headers: { "content-type": "application/x-www-form-urlencoded" },
       body: new URLSearchParams({ secret: env.TURNSTILE_SECRET_KEY, response: token, remoteip: ip || "" }),
+      signal: controller.signal,
     });
     const out = await resp.json();
     return !!out.success;
   } catch { return false; }
+  finally { clearTimeout(timer); }
 }
 
 /** 注销账号：解除设备关联（末位关联连带删设备并清收件箱/课表）、清 R2 文件与登记、
@@ -126,7 +132,9 @@ export async function verifyTurnstile(env, token, ip) {
 export async function deleteUserAccount(env, username) {
   const raw = await env.KV.get(`user:${username}`);
   if (!raw) return { ok: false, status: 404, code: "not_found", message: "用户不存在" };
-  const rec = JSON.parse(raw);
+  let rec;
+  try { rec = JSON.parse(raw); } catch { return { ok: false, status: 500, code: "corrupt", message: "账号数据损坏" }; }
+  if (!rec || typeof rec !== "object") return { ok: false, status: 500, code: "corrupt", message: "账号数据损坏" };
   const uid = rec.uid;
   const removedDids = [];
   try {

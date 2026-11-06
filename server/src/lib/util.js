@@ -47,6 +47,11 @@ export function randomDigits(n = 6) {
   return out.join("");
 }
 
+/** 容错 JSON 解析：KV/R2 中损坏的数据不应让整个请求 500 */
+export function safeJson(raw, fallback) {
+  try { return JSON.parse(raw || ""); } catch { return fallback; }
+}
+
 /** 当前 Unix 秒 */
 export const nowSec = () => Math.floor(Date.now() / 1000);
 

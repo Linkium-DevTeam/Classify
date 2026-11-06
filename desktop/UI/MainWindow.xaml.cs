@@ -43,8 +43,9 @@ public partial class MainWindow : Window
             var vh = SystemParameters.VirtualScreenHeight;
             Left = Math.Clamp(l, va - w + 160, va + vw - 160);
             Top = Math.Clamp(t, vt, vt + vh - 80);
-            Width = w;
-            Height = h;
+            // 分辨率变小时避免窗口比屏幕还大（教师找不到标题栏）
+            Width = Math.Max(500, Math.Min(w, vw - 80));
+            Height = Math.Max(400, Math.Min(h, vh - 80));
         }
         else
         {
@@ -90,6 +91,14 @@ public partial class MainWindow : Window
     /// <summary>关闭窗口 = 隐藏到托盘，保持后台轮询。</summary>
     protected override void OnClosing(CancelEventArgs e)
     {
+        // 托盘不可用（Explorer 未就绪/被杀）时隐藏会让应用彻底不可见，直接退出更可控
+        if (!TrayService.Instance.IsAvailable)
+        {
+            e.Cancel = false;
+            SettingsService.Instance.Save();
+            System.Windows.Application.Current.Shutdown();
+            return;
+        }
         e.Cancel = true;
         Hide();
         SettingsService.Instance.Save();

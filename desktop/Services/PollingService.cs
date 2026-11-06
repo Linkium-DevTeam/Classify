@@ -80,8 +80,7 @@ public sealed class PollingService : INotifyPropertyChanged
             {
                 if (!WsEnabled || DateTime.UtcNow < longPollUntil)
                 {
-                    Status = CloudStatus.Online;
-                    await LongPollCycle(ct);
+                    await LongPollCycle(ct); // 成功后才置 Online，避免失败时误显示“已连接”
                     await Task.Delay(TimeSpan.FromSeconds(3), ct); // 轮询节流：稳定性优先
                     continue;
                 }
@@ -169,7 +168,21 @@ public sealed class PollingService : INotifyPropertyChanged
                     catch { }
                     return true;
                 }
-                var text = Encoding.UTF8.GetString(buffer, 0, result.Count);
+                // 一条消息可能被拆成多个 WebSocket 帧；必须拼到 EndOfMessage 再解析，
+                // 否则大 backlog/代理分片会产生“JSON 解析失败”并丢消息。
+                using var message = new MemoryStream();
+                var frame = result;
+                while (true)
+                {
+                    if (frame.MessageType == WebSocketMessageType.Binary)
+                        throw new InvalidDataException("不支持二进制 WS 帧");
+                    if (frame.Count > 0) message.Write(buffer, 0, frame.Count);
+                    if (message.Length > 4 * 1024 * 1024)
+                        throw new InvalidDataException("WS 消息过大");
+                    if (frame.EndOfMessage) break;
+                    frame = await ws.ReceiveAsync(new ArraySegment<byte>(buffer), sessionCts.Token);
+                }
+                var text = Encoding.UTF8.GetString(message.GetBuffer(), 0, (int)message.Length);
                 HandleServerMessage(text, ws);
             }
         }
@@ -238,7 +251,7 @@ public sealed class PollingService : INotifyPropertyChanged
     /// <summary>设备被解绑/账号注销后的自愈：连续 3 次 401 → 停止轮询并提示重新绑定。</summary>
     private void NoteAuthFailureIf401(Exception ex)
     {
-        if (ex.Message?.Contains("401") != true) { _authFails = 0; return; }
+        if (ex.Message?.Contains("401") != true && ex.Message?.Contains("403") != true) { _authFails = 0; return; }
         if (++_authFails < 3) return;
         _authFails = 0;
         Stop();
@@ -261,6 +274,7 @@ public sealed class PollingService : INotifyPropertyChanged
                 try { MessageReceived?.Invoke(m); }
                 catch (Exception ex) { App.Log.Error("处理消息失败", ex); }
             }
+            Status = CloudStatus.Online;
             if (maxSeq > SettingsService.Instance.Values.Cursor)
             {
                 SettingsService.Instance.Values.Cursor = maxSeq;

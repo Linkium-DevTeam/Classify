@@ -14,6 +14,7 @@ import { handle } from "../src/app.js";
 import { makeEnv, MockKV } from "./_mock.mjs";
 import { signToken } from "../src/lib/auth.js";
 import { nowSec } from "../src/lib/util.js";
+import { VERSION, LITE_VERSION, BUILD } from "../src/version.js";
 
 const BASE = "https://classify.test";
 const IP = "203.0.113.7";
@@ -43,8 +44,8 @@ test("GET /api/health：无需 SECRET_KEY，返回版本与 build 且 no-store",
   const body = await res.json();
   assert.deepEqual(Object.keys(body), ["ok", "version", "build", "serverTime"]);
   assert.equal(body.ok, true);
-  assert.equal(body.version, "4.0.0");
-  assert.equal(body.build, "2026-11-04");
+  assert.equal(body.version, VERSION);
+  assert.equal(body.build, BUILD);
   assert.equal(typeof body.serverTime, "number");
 });
 
@@ -55,9 +56,9 @@ test("GET /api/version：返回 name/version/liteVersion/minVersion/serverTime/b
   const body = await res.json();
   assert.deepEqual(Object.keys(body), ["name", "version", "liteVersion", "minVersion", "serverTime", "build"]);
   assert.equal(body.name, "Classify");
-  assert.equal(body.version, "4.0.0");
-  assert.equal(body.liteVersion, "1.1.0");
-  assert.equal(body.build, "2026-11-04");
+  assert.equal(body.version, VERSION);
+  assert.equal(body.liteVersion, LITE_VERSION);
+  assert.equal(body.build, BUILD);
   assert.equal(body.minVersion, "");
 });
 

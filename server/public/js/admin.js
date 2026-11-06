@@ -2,7 +2,8 @@
 "use strict";
 
 const $ = (s) => document.querySelector(s);
-const token = localStorage.getItem("cc_token") || null;
+let token = null;
+try { token = localStorage.getItem("cc_token") || null; } catch { token = null; }
 
 let toastTimer = null;
 function toast(msg, isErr = false) {

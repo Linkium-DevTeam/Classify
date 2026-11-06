@@ -7,7 +7,7 @@
 /* ---------------- 常用语（本机）与喊话历史（云端，最近 20 条） ---------------- */
 
 function getQuick() {
-  try { return JSON.parse(localStorage.getItem("cc_quick") || "[]"); } catch { return []; }
+  try { return JSON.parse(storage.getItem("cc_quick") || "[]"); } catch { return []; }
 }
 
 function renderQuick() {
@@ -25,7 +25,7 @@ function renderQuick() {
     c.querySelector("span").onclick = () => { $("#an-text").value = q; $("#an-text").dispatchEvent(new Event("input")); };
     c.querySelector("b").onclick = (e) => {
       e.stopPropagation();
-      localStorage.setItem("cc_quick", JSON.stringify(getQuick().filter((x) => x !== q)));
+      storage.setItem("cc_quick", JSON.stringify(getQuick().filter((x) => x !== q)));
       renderQuick();
     };
     box.appendChild(c);
@@ -38,7 +38,7 @@ function saveQuick() {
   if (t.length > 60) return toast("常用语建议 60 字以内", true);
   const list = getQuick().filter((x) => x !== t);
   list.unshift(t);
-  localStorage.setItem("cc_quick", JSON.stringify(list.slice(0, 12)));
+  storage.setItem("cc_quick", JSON.stringify(list.slice(0, 12)));
   renderQuick();
   toast("已存为常用语 ⭐");
 }

@@ -977,25 +977,38 @@ public class ReadBoardWindow : Window
 
     private async Task ApplyAndRenderAsync(ReadBoardState.Group g, bool flowerDirect)
     {
-        List<ReadBoardState.Member> flowerRecipients;
-        ReadBoardState.Member member;
-        if (flowerDirect)
+        try
         {
-            // 直接加花模式：+1 朵即按占比派给一人并写评价
-            flowerRecipients = await _state.AddFlowersAsync(g, 1);
-            member = flowerRecipients.FirstOrDefault()!;
-            ShowBoardToast("🌸 认真读书评价 → " + (flowerRecipients.Count > 0
-                ? string.Join("、", flowerRecipients.Select(r => r.Name)) : "—"));
+            if (g.Members.Count == 0)
+            {
+                ShowBoardToast("小组还没有成员，先添加成员");
+                return;
+            }
+            List<ReadBoardState.Member> flowerRecipients;
+            ReadBoardState.Member member;
+            if (flowerDirect)
+            {
+                // 直接加花模式：+1 朵即按占比派给一人并写评价
+                flowerRecipients = await _state.AddFlowersAsync(g, 1);
+                member = flowerRecipients.FirstOrDefault()!;
+                ShowBoardToast("🌸 认真读书评价 → " + (flowerRecipients.Count > 0
+                    ? string.Join("、", flowerRecipients.Select(r => r.Name)) : "—"));
+            }
+            else
+            {
+                (member, flowerRecipients) = await _state.AddSlashAsync(g);
+                ShowBoardToast(flowerRecipients.Count > 0
+                    ? "🌸 认真读书评价 → " + string.Join("、", flowerRecipients.Select(r => r.Name))
+                    : $"斜杠 +1 → {member.Name}");
+            }
+            RenderAll();
+            await _state.PublishAsync();
         }
-        else
+        catch (Exception ex)
         {
-            (member, flowerRecipients) = await _state.AddSlashAsync(g);
-            ShowBoardToast(flowerRecipients.Count > 0
-                ? "🌸 认真读书评价 → " + string.Join("、", flowerRecipients.Select(r => r.Name))
-                : $"斜杠 +1 → {member.Name}");
+            App.Log.Error("看板加分失败", ex);
+            ShowBoardToast("操作失败：" + ex.Message);
         }
-        RenderAll();
-        await _state.PublishAsync();
     }
 
     // ---------- 本地交互 ----------

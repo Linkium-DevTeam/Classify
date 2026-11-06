@@ -7,6 +7,7 @@
 
 import { json, fail, readJson } from "../lib/http.js";
 import { rateLimit } from "../lib/rate-limit.js";
+import { safeJson } from "../lib/util.js";
 import { storeCall } from "../lib/store.js";
 import { VERSION, LITE_VERSION, BUILD } from "../version.js";
 
@@ -73,7 +74,8 @@ export async function handlePublic(req, env, url, ip) {
     if (kind === "crash") {
       if (!await rateLimit(env, `crash:${ip}`, 5, 3600)) return json({ ok: true });
       const key = `crash:${day}`;
-      const list = JSON.parse(await env.KV.get(key) || "[]");
+      const list = safeJson(await env.KV.get(key), []);
+      if (!Array.isArray(list)) return json({ ok: true });
       if (list.length < 20) {
         list.push({
           at: Date.now(),
@@ -85,7 +87,7 @@ export async function handlePublic(req, env, url, ip) {
       return json({ ok: true });
     }
     const key = `tel:${day}:${kind}`;
-    const cur = JSON.parse(await env.KV.get(key) || "{}");
+    const cur = safeJson(await env.KV.get(key), {}) || {};
     cur.count = (cur.count || 0) + 1;
     cur.versions = cur.versions || {};
     const v = String(version || "?").slice(0, 16);

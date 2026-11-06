@@ -62,7 +62,8 @@ export async function handleTeacher(req, env, url, user) {
       caps: parseCaps(d.caps),
     }));
     const raw = await env.KV.get(`user:${user.un}`);
-    const urec = raw ? JSON.parse(raw) : {};
+    let urec = {};
+    try { if (raw) urec = JSON.parse(raw) || {}; } catch { urec = {}; }
     const subject = urec.subject || "其他";
     const role = await isOwnerUid(env, user.uid) ? "admin" : "user";
     return json({

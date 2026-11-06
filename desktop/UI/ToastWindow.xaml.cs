@@ -39,8 +39,9 @@ public partial class ToastWindow : Window
     {
         TitleText.Text = title;
         BodyText.Text = body;
-        PositionBottomRight();
         WindowUtil.ShowWithoutActivate(this);
+        UpdateLayout();
+        PositionBottomRight();
 
         _closeTimer?.Stop();
         _closeTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(6) };
@@ -50,13 +51,16 @@ public partial class ToastWindow : Window
 
     private void PositionBottomRight()
     {
-        var dpi = WindowUtil.GetDpiForHwnd(WindowUtil.Hwnd(this));
-        var b = Interop.Win32.MonitorBoundsOfWindow(WindowUtil.Hwnd(this));
-        var wa = Interop.Win32.WorkAreaOfHwnd(WindowUtil.Hwnd(this));
+        var hwnd = WindowUtil.Hwnd(this);
+        var dpi = WindowUtil.GetDpiForHwnd(hwnd);
+        var wa = Interop.Win32.WorkAreaOfHwnd(hwnd);
+        var width = (int)Math.Round(WidthDip * dpi);
         var heightDip = ActualHeight > 0 ? ActualHeight : 80;
-        Left = (wa.Right - WidthDip * dpi - 20 * dpi) / dpi;
-        Top = (wa.Bottom - heightDip * dpi - 20 * dpi) / dpi;
-        _ = b;
+        var height = (int)Math.Ceiling(heightDip * dpi);
+        WindowUtil.PositionPhysical(this,
+            wa.Right - width - (int)Math.Round(20 * dpi),
+            wa.Bottom - height - (int)Math.Round(20 * dpi),
+            width, height);
     }
 
     protected override void OnClosed(EventArgs e)

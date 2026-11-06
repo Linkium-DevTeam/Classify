@@ -124,7 +124,7 @@ async function onPasswordReset() {
     state.token = data.token;
     state.uid = data.uid;
     state.username = data.username;
-    localStorage.setItem("cc_token", data.token);
+    storage.setItem("cc_token", data.token);
     toast("密码已重置并登录 ✅");
     showApp();
   } catch (ex) {
@@ -156,7 +156,7 @@ async function onAuthSubmit(e) {
     state.token = data.token;
     state.uid = data.uid;
     state.username = data.username;
-    localStorage.setItem("cc_token", data.token);
+    storage.setItem("cc_token", data.token);
     showApp();
     if (data.resetCode) {
       // 重置码仅此一次展示

@@ -39,8 +39,9 @@ export async function handleDevicePublic(req, env, url, ip) {
         for (const k of page.keys) {
           const rawU = await env.KV.get(k.name);
           if (!rawU) continue;
-          const u = JSON.parse(rawU);
-          if (u.uid === uid) { bannedOwner = !!u.banned; break; }
+          let u;
+          try { u = JSON.parse(rawU); } catch { continue; }
+          if (u && u.uid === uid) { bannedOwner = !!u.banned; break; }
         }
         cur = page.list_complete ? undefined : page.cursor;
       } while (!bannedOwner && cur);
@@ -126,8 +127,9 @@ export async function handleDevice(req, env, url) {
       for (const k of page.keys) {
         const raw = await env.KV.get(k.name);
         if (!raw) continue;
-        const rec = JSON.parse(raw);
-        if (rec.subject === subject)
+        let rec;
+        try { rec = JSON.parse(raw); } catch { continue; }
+        if (rec && rec.subject === subject)
           return json({ uid: rec.uid, username: rec.username, subject, avatar: rec.avatar || "", greeting: rec.greeting || "" });
       }
       cursor = page.list_complete ? undefined : page.cursor;
@@ -143,7 +145,8 @@ export async function handleDevice(req, env, url) {
     if (!/^[a-zA-Z0-9_-]{3,24}$/.test(name)) return fail(400, "bad_request", "用户名无效");
     const rawU = await env.KV.get(`user:${name}`);
     if (!rawU) return fail(404, "not_found", "教师不存在");
-    const u = JSON.parse(rawU);
+    let u;
+    try { u = JSON.parse(rawU); } catch { return fail(500, "corrupt", "教师数据损坏"); }
     return json({ username: u.username, avatar: u.avatar || "", greeting: u.greeting || "" });
   }
 

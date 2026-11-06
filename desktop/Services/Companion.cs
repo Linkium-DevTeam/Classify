@@ -17,39 +17,53 @@ public static class Companion
     /// <summary>伴生进程主循环（Program.Main 直入，不初始化 WPF）。</summary>
     public static int Run()
     {
-        using var mutex = new Mutex(true, CompanionMutexName, out _);
+        using var mutex = new Mutex(true, CompanionMutexName, out var isNew);
+        if (!isNew) return 0; // 已有伴生：避免双看护进程重复拉起
+
+        try { App.Log.Init(); } catch { /* 日志失败不影响看护 */ }
+        App.Log.Info("伴生进程启动");
+
         using var exitEvent = OpenExitEvent();
         var exe = Environment.ProcessPath;
         if (string.IsNullOrEmpty(exe)) return 0;
 
         while (true)
         {
-            if (exitEvent.WaitOne(0)) return 0;
-
-            // 更新换装优先：有 pending 标记就先换装（换装后主进程互斥体已释放，下方逻辑自然拉起新版）
-            if (UpdateSwap.Pending())
-            {
-                UpdateSwap.Apply(m => App.Log.Info("[swap] " + m));
-            }
-
-            var mainAlive = false;
-            try { using var _ = Mutex.OpenExisting(Program.MainMutexName); mainAlive = true; }
-            catch (WaitHandleCannotBeOpenedException) { mainAlive = false; }
-            catch (AbandonedMutexException) { mainAlive = true; }
-            catch { mainAlive = true; } // 保守：不确定时不动
-
-            if (!mainAlive)
+            try
             {
                 if (exitEvent.WaitOne(0)) return 0;
-                try
-                {
-                    Process.Start(new ProcessStartInfo(exe, "--autostart") { UseShellExecute = true });
-                }
-                catch { }
-            }
 
-            // 有更新待换装时缩短轮询间隔，加速完成
-            Thread.Sleep(UpdateSwap.Pending() ? 3000 : 15000);
+                // 更新换装优先：有 pending 标记就先换装（换装后主进程互斥体已释放，下方逻辑自然拉起新版）
+                if (UpdateSwap.Pending())
+                {
+                    var ok = UpdateSwap.Apply(m => App.Log.Info("[swap] " + m));
+                    if (!ok) App.Log.Error("更新换装未完成，稍后重试", null);
+                }
+
+                var mainAlive = false;
+                try { using var _ = Mutex.OpenExisting(Program.MainMutexName); mainAlive = true; }
+                catch (WaitHandleCannotBeOpenedException) { mainAlive = false; }
+                catch (AbandonedMutexException) { mainAlive = true; }
+                catch { mainAlive = true; } // 保守：不确定时不动
+
+                if (!mainAlive)
+                {
+                    if (exitEvent.WaitOne(0)) return 0;
+                    try
+                    {
+                        Process.Start(new ProcessStartInfo(exe, "--autostart") { UseShellExecute = true });
+                    }
+                    catch (Exception ex) { App.Log.Error("伴生拉起主进程失败", ex); }
+                }
+
+                // 有更新待换装时缩短轮询间隔；复制失败也给伴生留出退避时间，避免 3 秒一次死循环
+                Thread.Sleep(UpdateSwap.Pending() ? 10000 : 15000);
+            }
+            catch (Exception ex)
+            {
+                try { App.Log.Error("伴生循环异常", ex); } catch { }
+                try { Thread.Sleep(15000); } catch { return 0; }
+            }
         }
     }
 

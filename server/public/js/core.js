@@ -10,8 +10,26 @@ const CC = (window.CC = window.CC || {});
 
 var $ = (s) => document.querySelector(s);
 var $$ = (s) => Array.from(document.querySelectorAll(s));
+
+// 隐私模式 / 嵌入式 WebView / 禁用 Cookie 时 storage 可能直接抛异常；
+// 用内存兜底，保证登录页和整个应用仍能启动。
+var storage = (function () {
+  try {
+    var probe = "__cc_probe__";
+    window.localStorage.setItem(probe, "1");
+    window.localStorage.removeItem(probe);
+    return window.localStorage;
+  } catch (e) {
+    return {
+      getItem: function () { return null; },
+      setItem: function () {},
+      removeItem: function () {},
+    };
+  }
+})();
+
 var state = {
-  token: localStorage.getItem("cc_token") || null,
+  token: storage.getItem("cc_token") || null,
   uid: null, username: null,
   devices: [], files: [],
   targets: new Set(),           // 选中的设备 did
@@ -132,10 +150,10 @@ function showApp() {
   // 匿名遥测（可开关，默认开；仅页面打开次数，无任何内容与身份）
   const telBox = $("#st-telemetry");
   if (telBox) {
-    telBox.checked = localStorage.getItem("cc_telemetry") !== "0";
-    telBox.onchange = () => localStorage.setItem("cc_telemetry", telBox.checked ? "1" : "0");
+    telBox.checked = storage.getItem("cc_telemetry") !== "0";
+    telBox.onchange = () => storage.setItem("cc_telemetry", telBox.checked ? "1" : "0");
   }
-  if (localStorage.getItem("cc_telemetry") !== "0" && !DEMO) {
+  if (storage.getItem("cc_telemetry") !== "0" && !DEMO) {
     api("/telemetry", { method: "POST", json: { kind: "web", version: "web" } }).catch(() => {});
   }
 }
@@ -186,7 +204,7 @@ async function refreshBroadcast() {
 /* ---------------- 登录状态 ---------------- */
 
 function logout(clear = true) {
-  if (clear) localStorage.removeItem("cc_token");
+  if (clear) storage.removeItem("cc_token");
   state.token = null; state.uid = null; state.username = null;
   state.devices = []; state.files = []; state.targets.clear();
   if (state.pairTimer) clearInterval(state.pairTimer);

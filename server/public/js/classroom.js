@@ -6,12 +6,12 @@
 
 /* ---------------- 早读智能看板 ---------------- */
 
-/** 看板成员显示名：新快照只含座号（姓名不出教室电脑），别名对照表存本机 localStorage */
+/** 看板成员显示名：新快照只含座号（姓名不出教室电脑），别名对照表存本机 storage */
 function rbMemberLabel(g, m) {
   if (m.name) return m.name; // 兼容旧设备快照
   const key = g.name + ":" + m.seat;
   try {
-    const alias = (JSON.parse(localStorage.getItem("cc_alias") || "{}"))[key];
+    const alias = (JSON.parse(storage.getItem("cc_alias") || "{}"))[key];
     if (alias) return alias;
   } catch {}
   return g.name + "·" + m.seat + "号";
@@ -156,16 +156,16 @@ function renderRbGroups(state2) {
           const key = g.name + ":" + m.seat;
           const inp = document.createElement("input");
           inp.className = "cd-input"; inp.style.width = "100%";
-          try { inp.value = (JSON.parse(localStorage.getItem("cc_alias") || "{}"))[key] || ""; } catch {}
+          try { inp.value = (JSON.parse(storage.getItem("cc_alias") || "{}"))[key] || ""; } catch {}
           modal({
             title: "✎ 本机别名",
             body: "为「" + g.name + "·" + m.seat + "号」设置只显示在你手机上的别名（保存在本机，不上传云端）：",
             okText: "保存",
             onOk: () => {
               let map = {};
-              try { map = JSON.parse(localStorage.getItem("cc_alias") || "{}"); } catch {}
+              try { map = JSON.parse(storage.getItem("cc_alias") || "{}"); } catch {}
               if (inp.value.trim()) map[key] = inp.value.trim(); else delete map[key];
-              localStorage.setItem("cc_alias", JSON.stringify(map));
+              storage.setItem("cc_alias", JSON.stringify(map));
               refreshRbState().catch(() => {});
             },
           });

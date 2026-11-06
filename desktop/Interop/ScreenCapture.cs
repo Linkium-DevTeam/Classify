@@ -43,15 +43,20 @@ public static class ScreenCapture
     /// <summary>抓取 hdc 对应屏幕范围为 JPEG 文件。返回是否成功。</summary>
     public static bool CaptureToJpeg(string filePath, int x, int y, int width, int height, long quality = 70)
     {
+        if (width <= 0 || height <= 0) return false;
         IntPtr screenDC = IntPtr.Zero, memDC = IntPtr.Zero, bmp = IntPtr.Zero, old = IntPtr.Zero;
         try
         {
             screenDC = GetDC(IntPtr.Zero);
+            if (screenDC == IntPtr.Zero) return false;
             memDC = CreateCompatibleDC(screenDC);
+            if (memDC == IntPtr.Zero) return false;
             bmp = CreateCompatibleBitmap(screenDC, width, height);
             if (bmp == IntPtr.Zero) return false;
             old = SelectObject(memDC, bmp);
-            BitBlt(memDC, 0, 0, width, height, screenDC, x, y, SRCCOPY | CAPTUREBLT);
+            if (old == IntPtr.Zero) return false;
+            if (!BitBlt(memDC, 0, 0, width, height, screenDC, x, y, SRCCOPY | CAPTUREBLT))
+                return false;
             SelectObject(memDC, old);
             old = IntPtr.Zero;
 

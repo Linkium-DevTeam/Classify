@@ -77,7 +77,13 @@ public partial class OverlayWindow : Window
         _countdown.Tick += (_, _) =>
         {
             tick++;
-            HintText.Text = $"点击任意位置关闭 · {Math.Max(0, _secondsLeft - tick)} 秒后自动收起";
+            var left = Math.Max(0, _secondsLeft - tick);
+            HintText.Text = $"点击任意位置关闭 · {left} 秒后自动收起";
+            if (left <= 0)
+            {
+                _countdown?.Stop();
+                _userClosed.TrySetResult();
+            }
         };
         _countdown.Start();
     }

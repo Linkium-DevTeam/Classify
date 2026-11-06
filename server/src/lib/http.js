@@ -61,6 +61,8 @@ export function downloadResponse(obj, filename) {
       "content-disposition": `attachment; filename="${filename}"`,
       "content-length": String(obj.size),
       "cache-control": "no-cache",
+      "x-content-type-options": "nosniff",
+      "referrer-policy": "no-referrer",
     },
   });
 }

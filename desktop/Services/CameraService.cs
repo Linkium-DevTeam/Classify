@@ -23,15 +23,29 @@ public static class CameraService
             ?? devices[0];
         App.Log.Info($"拍照使用摄像头: {selected.Name}");
 
-        string path = Path.Combine(Path.GetTempPath(),
-            $"classify-cam-{DateTime.Now:yyyyMMdd-HHmmss}.jpg");
+        var path = Path.Combine(Path.GetTempPath(),
+            $"classify-cam-{DateTime.Now:yyyyMMdd-HHmmss}-{Guid.NewGuid():N}.jpg");
 
+        try
+        {
+            await CaptureToFileAsync(selected.Id, path);
+            var newName = $"教室照片-{DateTime.Now:yyyyMMdd-HHmmss}.jpg";
+            await new ApiService().UploadToTeacherAsync(path, newName);
+        }
+        finally
+        {
+            try { if (File.Exists(path)) File.Delete(path); } catch { }
+        }
+    }
+
+    private static async Task CaptureToFileAsync(string deviceId, string path)
+    {
         var mc = new MediaCapture();
         try
         {
             await mc.InitializeAsync(new MediaCaptureInitializationSettings
             {
-                VideoDeviceId = selected.Id,
+                VideoDeviceId = deviceId,
                 StreamingCaptureMode = StreamingCaptureMode.Video,
             });
             var props = ImageEncodingProperties.CreateJpeg();
@@ -39,6 +53,7 @@ public static class CameraService
             await mc.CapturePhotoToStreamAsync(props, stream);
 
             var size = (int)stream.Size;
+            if (size <= 0) throw new InvalidOperationException("摄像头返回空照片");
             var buffer = new byte[size];
             using var reader = new DataReader(stream.GetInputStreamAt(0));
             await reader.LoadAsync((uint)size);
@@ -47,11 +62,7 @@ public static class CameraService
         }
         finally
         {
-            mc.Dispose();
+            try { mc.Dispose(); } catch { /* 摄像头驱动偶发释放异常，不影响回传结果 */ }
         }
-
-        var newName = $"教室照片-{DateTime.Now:yyyyMMdd-HHmmss}.jpg";
-        await new ApiService().UploadToTeacherAsync(path, newName);
-        try { File.Delete(path); } catch { }
     }
 }

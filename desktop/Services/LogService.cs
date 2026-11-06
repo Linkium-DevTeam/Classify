@@ -20,7 +20,7 @@ public sealed class LogService
     }
 
     public static string AppVersion =>
-        typeof(LogService).Assembly.GetName().Version?.ToString(3) ?? "1.0.0";
+        typeof(LogService).Assembly.GetName().Version?.ToString(3) ?? "4.0.1";
 
     public string LogDirectory => _dir;
 

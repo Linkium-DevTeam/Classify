@@ -4,10 +4,10 @@ namespace Classify.Services;
 
 /// <summary>
 /// 开机自启：
-///  1) 安装器（管理员）已创建 Classify 计划任务（登录静默自启）——存在与否通过任务缓存注册表只读探测；
+///  1) 安装器（管理员）可创建 Classify 计划任务（登录静默自启）——存在与否通过任务缓存注册表只读探测；
 ///  2) 应用内开关管理 HKCU Run 注册表项（无权限要求，必成）。
 /// 两者并存时双通道自启，由单实例互斥去重。被杀恢复由伴生互拉（Companion）承担。
-/// v3 不在应用内调用 schtasks/powershell 等外部命令（权限不稳且告警面大）。
+/// v4 不再写 VBS 看门狗脚本，减少杀软误报。
 /// </summary>
 public static class AutoStartService
 {
@@ -19,9 +19,6 @@ public static class AutoStartService
 
     private static string RunValue =>
         "\"" + ExePath + "\" --autostart";
-
-    private static string WatchdogVbsPath => Path.Combine(
-        AppPaths.DataDir, "watchdog.vbs");
 
     public static string CurrentMethod =>
         SettingsService.Instance.Values.AutoStartMethod;
@@ -41,7 +38,7 @@ public static class AutoStartService
     {
         try
         {
-            using var key = Microsoft.Win32.Registry.LocalMachine.OpenSubKey(
+            using var key = Registry.LocalMachine.OpenSubKey(
                 @"SOFTWARE\Microsoft\Windows NT\CurrentVersion\Schedule\TaskCache\Tree\" + TaskName);
             return key != null;
         }
@@ -51,17 +48,22 @@ public static class AutoStartService
     /// <summary>启用自启：注册表 Run（必成）+ 安装器任务存在则一并依赖。返回实际生效描述。</summary>
     public static string Enable()
     {
-        Disable(clearSetting: false);
-        using (var run = CreateRunKey())
+        try
         {
+            Disable(clearSetting: false);
+            using var run = CreateRunKey();
             run.SetValue(RunValueName, RunValue);
+            var task = InstallerTaskExists();
+            SetMethod(task ? "task+registry" : "registry");
+            return task
+                ? "已启用（安装时创建的计划任务 + 注册表双保险）"
+                : "已启用注册表自启（被杀自动恢复由伴生进程承担）";
         }
-        var task = InstallerTaskExists();
-        SetMethod(task ? "task+registry" : "registry");
-        WriteWatchdogVbs(); // 保留 vbs 供排障，不再注册计划任务（Defender 行为遏制）
-        return task
-            ? "已启用（安装时创建的计划任务 + 注册表双保险）"
-            : "已启用注册表自启（被杀自动恢复由伴生进程承担）";
+        catch (Exception ex)
+        {
+            App.Log.Error("启用开机自启失败", ex);
+            return "启用失败：" + ex.Message;
+        }
     }
 
     public static void Disable(bool clearSetting = true)
@@ -77,34 +79,8 @@ public static class AutoStartService
 
     private static RegistryKey CreateRunKey() =>
         Registry.CurrentUser.OpenSubKey(@"Software\Microsoft\Windows\CurrentVersion\Run", writable: true)
-        ?? Registry.CurrentUser.CreateSubKey(@"Software\Microsoft\Windows\CurrentVersion\Run", writable: true);
-
-    public static void WriteWatchdogVbs(string? exe = null)
-    {
-        try
-        {
-            exe ??= ExePath;
-            var dir = Path.GetDirectoryName(WatchdogVbsPath);
-            if (dir != null) Directory.CreateDirectory(dir);
-            // WScript 无控制台窗口：WMI 查询进程，不存在则静默拉起
-            var lines = new[]
-            {
-                "' Classify watchdog",
-                "Dim shell, wmi, procs",
-                "Set shell = CreateObject(\"WScript.Shell\")",
-                "Set wmi = GetObject(\"winmgmts:{impersonationLevel=impersonate}!\\\\.\\root\\cimv2\")",
-                $"Set procs = wmi.ExecQuery(\"SELECT ProcessId FROM Win32_Process WHERE Name = '{Path.GetFileName(exe)}'\")",
-                "If procs.Count = 0 Then",
-                $"  shell.Run \"\"\"{exe}\"\" --autostart\", 0, False",
-                "End If",
-            };
-            File.WriteAllText(WatchdogVbsPath, string.Join("\r\n", lines) + "\r\n");
-        }
-        catch (Exception ex)
-        {
-            App.Log.Error("写入看门狗脚本失败", ex);
-        }
-    }
+        ?? Registry.CurrentUser.CreateSubKey(@"Software\Microsoft\Windows\CurrentVersion\Run", writable: true)
+        ?? throw new InvalidOperationException("无法打开当前用户 Run 注册表项");
 
     private static void SetMethod(string method)
     {

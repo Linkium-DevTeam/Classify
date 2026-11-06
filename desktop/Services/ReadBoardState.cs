@@ -58,12 +58,45 @@ public sealed class ReadBoardState
             if (File.Exists(path))
             {
                 var st = JsonSerializer.Deserialize<ReadBoardState>(File.ReadAllText(path)) ?? new ReadBoardState();
+                st.Normalize();
                 st.MigrateLegacy();
                 return st;
             }
         }
         catch (Exception ex) { App.Log.Error("读板状态读取失败", ex); }
         return new ReadBoardState();
+    }
+
+    /// <summary>损坏/旧版 JSON 的防御性规整：null 列表、越界下标、负数计数都在这里收敛。</summary>
+    private void Normalize()
+    {
+        Ratio = Math.Clamp(Ratio <= 0 ? DefaultRatio : Ratio, 1, 10);
+        Groups = Groups ?? new();
+        Tasks = Tasks ?? new();
+        Groups.RemoveAll(g => g is null);
+        foreach (var g in Groups)
+        {
+            g.Name = string.IsNullOrWhiteSpace(g.Name) ? "小组" : g.Name;
+            g.Members = g.Members ?? new();
+            g.Members.RemoveAll(m => m is null);
+            g.FlowerLog = g.FlowerLog ?? new();
+            if (g.FlowerLog.Count > 100) g.FlowerLog.RemoveRange(0, g.FlowerLog.Count - 100);
+            foreach (var m in g.Members)
+            {
+                m.Name = m.Name ?? "";
+                m.Slashes = Math.Max(0, m.Slashes);
+                m.Flowers = Math.Max(0, m.Flowers);
+            }
+            g.FlowersAwarded = Math.Max(0, g.FlowersAwarded);
+        }
+        Tasks.RemoveAll(t => t is null);
+        foreach (var t in Tasks)
+        {
+            t.Name = t.Name ?? "";
+            t.Minutes = Math.Clamp(t.Minutes, 0, 180);
+        }
+        if (ActiveTask < -1 || ActiveTask >= Tasks.Count) ActiveTask = -1;
+        if (Tasks.Count == 0) ActiveTask = -1;
     }
 
     /// <summary>旧版单任务字段 → 任务单迁移。</summary>

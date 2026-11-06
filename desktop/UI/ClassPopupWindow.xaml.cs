@@ -57,8 +57,9 @@ public partial class ClassPopupWindow : Window
         HintText.Text = $"{seconds} 秒后自动收起";
 
         _userClosed = CreateTcs();
-        PositionTopCenter();
         WindowUtil.ShowWithoutActivate(this);
+        UpdateLayout();
+        PositionTopCenter();
 
         StartCountdown(seconds);
         UpdateSpeaking();
@@ -67,10 +68,16 @@ public partial class ClassPopupWindow : Window
 
     private void PositionTopCenter()
     {
-        var dpi = WindowUtil.GetDpiForHwnd(WindowUtil.Hwnd(this));
-        var b = Interop.Win32.MonitorBoundsOfWindow(WindowUtil.Hwnd(this));
-        Left = (b.Left + (b.Right - b.Left - WidthDip * dpi) / 2) / dpi;
-        Top = (b.Top + TopOffsetDip * dpi) / dpi;
+        var hwnd = WindowUtil.Hwnd(this);
+        var dpi = WindowUtil.GetDpiForHwnd(hwnd);
+        var b = Interop.Win32.MonitorBoundsOfWindow(hwnd);
+        var width = (int)Math.Round(WidthDip * dpi);
+        var heightDip = ActualHeight > 0 ? ActualHeight : 120;
+        var height = (int)Math.Ceiling(heightDip * dpi);
+        WindowUtil.PositionPhysical(this,
+            b.Left + (b.Right - b.Left - width) / 2,
+            b.Top + (int)Math.Round(TopOffsetDip * dpi),
+            width, height);
     }
 
     private void StartCountdown(int seconds)

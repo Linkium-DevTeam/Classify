@@ -1,3 +1,4 @@
+using System.Net;
 using System.Net.Http;
 using System.Net.Sockets;
 using System.Text;
@@ -47,11 +48,19 @@ public sealed partial class ApiService
                         catch { /* 试下一个 IP */ }
                     }
                 }
-                // 回退：系统 DNS 正常连接
-                var fallback = new Socket(AddressFamily.InterNetwork,
-                    SocketType.Stream, ProtocolType.Tcp);
-                await fallback.ConnectAsync(ctx.DnsEndPoint, ct);
-                return new NetworkStream(fallback, ownsSocket: true);
+                // 回退：系统 DNS 正常连接（同时支持 IPv4/IPv6，避免只有 AAAA 的网络失败）
+                var addresses = await Dns.GetHostAddressesAsync(host).WaitAsync(TimeSpan.FromSeconds(4), ct);
+                foreach (var addr in addresses)
+                {
+                    var fallback = new Socket(addr.AddressFamily, SocketType.Stream, ProtocolType.Tcp);
+                    try
+                    {
+                        await fallback.ConnectAsync(new IPEndPoint(addr, ctx.DnsEndPoint.Port), ct);
+                        return new NetworkStream(fallback, ownsSocket: true);
+                    }
+                    catch { fallback.Dispose(); }
+                }
+                throw new HttpRequestException("无法连接服务器（DNS/网络不可用）");
             };
         return h;
     }
@@ -98,23 +107,26 @@ public sealed partial class ApiService
         {
             foreach (var m in arr.EnumerateArray())
             {
+                // payload 必须是对象；损坏/异形消息只跳过字段，不让整轮轮询抛异常
+                var hasPayload = m.TryGetProperty("payload", out var pl)
+                                 && pl.ValueKind == JsonValueKind.Object;
                 var msg = new InboxMessage
                 {
-                    Seq = m.TryGetProperty("seq", out var sq) ? sq.GetInt64() : 0,
-                    Type = m.TryGetProperty("type", out var tp) ? tp.GetString() ?? "" : "",
-                    Mid = m.TryGetProperty("payload", out var pl0) && pl0.TryGetProperty("mid", out var md) ? md.GetString() ?? "" : "",
-                    RawPayload = m.TryGetProperty("payload", out var plR) ? plR.GetRawText() : "{}",
-                    From = (m.TryGetProperty("from", out var fm) ? fm.GetString() : null)
-                         ?? (m.TryGetProperty("payload", out var plFm) && plFm.TryGetProperty("from", out var fm2) ? fm2.GetString() ?? "" : ""),
-                    Created = m.TryGetProperty("created", out var cr) ? cr.GetInt64() : 0,
+                    Seq = m.TryGetProperty("seq", out var sq) && sq.TryGetInt64(out var seq) ? seq : 0,
+                    Type = m.TryGetProperty("type", out var tp) && tp.ValueKind == JsonValueKind.String ? tp.GetString() ?? "" : "",
+                    Mid = hasPayload && pl.TryGetProperty("mid", out var md) ? md.GetString() ?? "" : "",
+                    RawPayload = hasPayload ? pl.GetRawText() : "{}",
+                    From = (m.TryGetProperty("from", out var fm) && fm.ValueKind == JsonValueKind.String ? fm.GetString() : null)
+                         ?? (hasPayload && pl.TryGetProperty("from", out var fm2) ? fm2.GetString() ?? "" : ""),
+                    Created = m.TryGetProperty("created", out var cr) && cr.TryGetInt64(out var created) ? created : 0,
                 };
-                if (m.TryGetProperty("payload", out var pl))
+                if (hasPayload)
                 {
-                    if (pl.TryGetProperty("text", out var tx)) msg.Text = tx.GetString() ?? "";
-                    if (pl.TryGetProperty("speak", out var sp)) msg.Speak = sp.GetBoolean();
-                    if (pl.TryGetProperty("fid", out var fd)) msg.FileId = fd.GetString() ?? "";
-                    if (pl.TryGetProperty("name", out var nm)) msg.FileName = nm.GetString() ?? "";
-                    if (pl.TryGetProperty("size", out var sz)) msg.FileSize = sz.GetInt64();
+                    if (pl.TryGetProperty("text", out var tx) && tx.ValueKind == JsonValueKind.String) msg.Text = tx.GetString() ?? "";
+                    if (pl.TryGetProperty("speak", out var sp) && sp.ValueKind is JsonValueKind.True or JsonValueKind.False) msg.Speak = sp.GetBoolean();
+                    if (pl.TryGetProperty("fid", out var fd) && fd.ValueKind == JsonValueKind.String) msg.FileId = fd.GetString() ?? "";
+                    if (pl.TryGetProperty("name", out var nm) && nm.ValueKind == JsonValueKind.String) msg.FileName = nm.GetString() ?? "";
+                    if (pl.TryGetProperty("size", out var sz) && sz.TryGetInt64(out var size)) msg.FileSize = size;
                     if (msg.Type == "cmd" && pl.TryGetProperty("name", out var cn)) msg.CmdName = cn.GetString() ?? "";
                     if (msg.Type == "cmd" && pl.TryGetProperty("value", out var cv))
                         msg.CmdValue = cv.ValueKind == JsonValueKind.Null ? null : cv.ToString();
