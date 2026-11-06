@@ -51,7 +51,7 @@ dotnet publish -c Release -r win-x64 --self-contained true
 
 ## 运行要求
 
-- 教室机：Windows 10 1809+ / Windows 11，x64；安装 .NET 10 Desktop Runtime。
+- 教室机：Windows 10 1809+ / Windows 11，x64；默认自包含发布，无需预装 .NET Desktop Runtime。
 - 云端：Cloudflare 账号（Workers Paid 计划才能使用 Durable Objects；免费额度不足以支撑多设备常驻）。
 - 手机端：现代浏览器；可“添加到主屏幕”作为 PWA 使用。
 
