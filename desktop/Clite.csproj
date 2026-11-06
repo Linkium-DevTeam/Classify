@@ -8,7 +8,7 @@
     <AssemblyName>Clite</AssemblyName>
     <Nullable>disable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
-    <Version>1.1.0</Version>
+    <Version>1.1.1</Version>
     <DefaultItemExcludes>$(DefaultItemExcludes);obj/**;bin/**</DefaultItemExcludes>
     <Product>Classify Lite</Product>
     <Company>Linkium DevTeam</Company>
@@ -19,6 +19,7 @@
     <EnableCompressionInSingleFile>true</EnableCompressionInSingleFile>
     <DebugType>none</DebugType>
     <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
     <ApplicationIcon>clite.ico</ApplicationIcon>
   </PropertyGroup>
   <ItemGroup>

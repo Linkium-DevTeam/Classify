@@ -10,6 +10,8 @@ using System.Windows.Controls;
 using System.Windows.Media;
 using System.Windows.Media.Effects;
 using System.Windows.Threading;
+using System.Windows.Interop;
+using System.Threading;
 using WpfApp = System.Windows.Application;
 using WpfFontFamily = System.Windows.Media.FontFamily;
 using HAlign = System.Windows.HorizontalAlignment;
@@ -25,7 +27,7 @@ public static class Program
     static readonly string Server = ResolveServer();
     static readonly HttpClient Http = new() { Timeout = TimeSpan.FromSeconds(12) };
     static readonly string Version =
-        typeof(Program).Assembly.GetName().Version?.ToString(3) ?? "1.1.0";
+        typeof(Program).Assembly.GetName().Version?.ToString(3) ?? "1.1.1";
 
     static string _code = "";
     static Window _mainWin = null!;
@@ -38,32 +40,85 @@ public static class Program
     static bool _ttsEnabled = true;
     static bool _polling;
     static bool _registered;
+    static bool _trayOk;
     static DateTime _lastRegister = DateTime.MinValue;
+
+    private const string SingleInstanceMutex = @"Local\Clite_SingleInstance";
+    private const string ShowEventName = @"Local\Clite_Show";
 
     [STAThread]
     static void Main()
     {
-        var app = new WpfApp();
-        app.ShutdownMode = ShutdownMode.OnExplicitShutdown;
-        _code = GetDeviceCode();
-        _mainWin = BuildMainWindow();
-        SetupTray();
+        // 单实例：教师双击两次/开机自启+手动启动不应产生两个悬浮层和两路 TTS
+        using var mutex = new Mutex(true, SingleInstanceMutex, out var isNew);
+        if (!isNew)
+        {
+            try
+            {
+                using var ev = EventWaitHandle.OpenExisting(ShowEventName);
+                ev.Set();
+            }
+            catch { }
+            return;
+        }
 
-        _pollTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(3) };
-        _pollTimer.Tick += async (_, _) => await PollAsync();
-        _pollTimer.Start();
-        _ = PollAsync();
-        _ = RegisterAsync();
+        var app = new WpfApp { ShutdownMode = ShutdownMode.OnExplicitShutdown };
+        app.DispatcherUnhandledException += (_, e) =>
+        {
+            LogLite("UI 未处理异常 " + e.Exception);
+            e.Handled = true; // 单条消息/窗口异常不应让托盘守护整体退出
+        };
+        AppDomain.CurrentDomain.UnhandledException += (_, e) =>
+            LogLite("进程未处理异常 " + e.ExceptionObject);
+        TaskScheduler.UnobservedTaskException += (_, e) =>
+        {
+            LogLite("未观察任务异常 " + e.Exception);
+            e.SetObserved();
+        };
+        try
+        {
+            _code = GetDeviceCode();
+            _mainWin = BuildMainWindow();
+            _trayOk = SetupTray();
+            app.ShutdownMode = _trayOk ? ShutdownMode.OnExplicitShutdown : ShutdownMode.OnMainWindowClose;
 
-        // 自动收起：主窗口 2 分钟后自动隐藏到托盘（展示口令用，不需要常驻桌面）
-        _collapseTimer = new DispatcherTimer { Interval = TimeSpan.FromMinutes(2) };
-        _collapseTimer.Tick += (_, _) => CollapseMain();
-        _collapseTimer.Start();
+            using var showEvent = new EventWaitHandle(false, EventResetMode.AutoReset, ShowEventName);
+            ThreadPool.RegisterWaitForSingleObject(showEvent,
+                (_, _) => { try { _mainWin.Dispatcher.BeginInvoke(new Action(ShowMain)); } catch { } },
+                null, Timeout.Infinite, executeOnlyOnce: false);
 
-        _mainWin.Icon = LoadLogo(); // 窗口标题栏 + 任务栏
-        _mainWin.Show(); // 老师启动后必须立刻能看到设备口令
+            _pollTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(3) };
+            _pollTimer.Tick += async (_, _) => await PollAsync();
+            _pollTimer.Start();
+            _ = PollAsync();
+            _ = RegisterAsync();
 
-        app.Run();
+            // 自动收起：主窗口 2 分钟后自动隐藏到托盘（展示口令用，不需要常驻桌面）
+            _collapseTimer = new DispatcherTimer { Interval = TimeSpan.FromMinutes(2) };
+            _collapseTimer.Tick += (_, _) => CollapseMain();
+            _collapseTimer.Start();
+
+            _mainWin.Icon = LoadLogo(); // 窗口标题栏 + 任务栏
+            _mainWin.Show(); // 老师启动后必须立刻能看到设备口令
+            app.Run();
+        }
+        catch (Exception ex)
+        {
+            try { LogLite("FATAL " + ex); } catch { }
+            try { System.Windows.MessageBox.Show("Classify Lite 启动失败：" + ex.Message, "Classify Lite", MessageBoxButton.OK, MessageBoxImage.Error); } catch { }
+        }
+    }
+
+    static void LogLite(string message)
+    {
+        try
+        {
+            var dir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "ClassifyLite");
+            Directory.CreateDirectory(dir);
+            File.AppendAllText(Path.Combine(dir, "error.log"),
+                DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss") + " " + message + Environment.NewLine);
+        }
+        catch { }
     }
 
     static ImageSource LoadLogo()
@@ -96,6 +151,8 @@ public static class Program
 
     static void CollapseMain()
     {
+        // 没有托盘时隐藏主窗口会让应用彻底不可见——此时保持窗口显示
+        if (!_trayOk) return;
         try { _collapseTimer.Stop(); _mainWin.Hide(); } catch { }
     }
 
@@ -143,18 +200,31 @@ public static class Program
 
     static string GetDeviceCode()
     {
+        // 口令必须“每台设备固定”：注册表读取失败时也不能退化成每次启动随机，
+        // 否则教师记住的口令会失效、设备也无法续注册。
+        var seed = "";
         try
         {
-            var mguid = Microsoft.Win32.Registry.GetValue(
+            seed = Microsoft.Win32.Registry.GetValue(
                 @"HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Cryptography", "MachineGuid", "") as string ?? "";
-            // MachineGuid 不可用时退回机器名+用户名，保证同一台教室机口令稳定
-            var seed = string.IsNullOrWhiteSpace(mguid)
-                ? Environment.MachineName + "|" + Environment.UserName + "|clite|v1"
-                : mguid + "|clite|v1";
+        }
+        catch { }
+        if (string.IsNullOrWhiteSpace(seed))
+            seed = Environment.MachineName + "|" + Environment.UserName + "|clite|v1";
+        else
+            seed += "|clite|v1";
+
+        try
+        {
             var hash = SHA256.HashData(Encoding.UTF8.GetBytes(seed));
             return (BitConverter.ToUInt64(hash, 0) % 100000000).ToString("D8");
         }
-        catch { return Random.Shared.Next(10000000, 99999999).ToString("D8"); }
+        catch
+        {
+            // 极端的哈希/编码异常（几乎不可能）：用稳定字符串的简单摘要，仍避免随机
+            var sum = seed.Aggregate(17UL, (acc, ch) => acc * 31 + ch);
+            return (sum % 100000000).ToString("D8");
+        }
     }
 
     static async Task RegisterAsync()
@@ -268,7 +338,11 @@ public static class Program
             ResizeMode = ResizeMode.NoResize,
             Background = new SolidColorBrush(MColor.FromRgb(0x0B, 0x10, 0x20)),
         };
-        w.Closing += (_, e) => { e.Cancel = true; w.Hide(); };
+        w.Closing += (_, e) =>
+        {
+            if (_trayOk) { e.Cancel = true; w.Hide(); }
+            // 托盘不可用时允许关闭，ShutdownMode=OnMainWindowClose 会正常退出
+        };
 
         var panel = new StackPanel { Margin = new Thickness(30, 20, 30, 20) };
         panel.Children.Add(new TextBlock { Text = "Classify Lite", FontSize = 22, FontWeight = FontWeights.Bold, Foreground = MBrushes.White, HorizontalAlignment = HAlign.Center, Margin = new Thickness(0, 0, 0, 4) });
@@ -311,45 +385,60 @@ public static class Program
         return w;
     }
 
-    static void SetupTray()
+    static bool SetupTray()
     {
-        _tray = new System.Windows.Forms.NotifyIcon
+        try
         {
-            Text = "Classify Lite",
-            Visible = true,
-            Icon = LoadTrayIcon(),
-        };
-        var menu = new System.Windows.Forms.ContextMenuStrip();
-        menu.Items.Add("显示", default, (_, _) => ShowMain());
-        menu.Items.Add("复制设备口令", default, (_, _) =>
-        {
-            try { System.Windows.Clipboard.SetText(_code); } catch { }
-        });
-        menu.Items.Add("打开控制页", default, (_, _) => OpenControlPage());
-        var ttsItem = new System.Windows.Forms.ToolStripMenuItem("本地朗读") { Checked = _ttsEnabled };
-        ttsItem.Click += (_, _) => { _ttsEnabled = !_ttsEnabled; ttsItem.Checked = _ttsEnabled; };
-        menu.Items.Add(ttsItem);
-        var autoStartItem = new System.Windows.Forms.ToolStripMenuItem("开机自启") { Checked = IsAutoStart() };
-        autoStartItem.Click += (_, _) =>
-        {
-            try
+            _tray = new System.Windows.Forms.NotifyIcon
             {
-                using var rk = Microsoft.Win32.Registry.CurrentUser.OpenSubKey(
-                    @"Software\Microsoft\Windows\CurrentVersion\Run", writable: true)!;
-                if (IsAutoStart()) { rk.DeleteValue("ClassifyLite", false); autoStartItem.Checked = false; }
-                else { rk.SetValue("ClassifyLite", "\"" + Environment.ProcessPath + "\""); autoStartItem.Checked = true; }
-            }
-            catch { }
-        };
-        menu.Items.Add(autoStartItem);
-        menu.Items.Add("退出", default, (_, _) =>
+                Text = "Classify Lite",
+                Visible = true,
+                Icon = LoadTrayIcon(),
+            };
+            var menu = new System.Windows.Forms.ContextMenuStrip();
+            menu.Items.Add("显示", default, (_, _) => ShowMain());
+            menu.Items.Add("复制设备口令", default, (_, _) =>
+            {
+                try { System.Windows.Clipboard.SetText(_code); } catch { }
+            });
+            menu.Items.Add("打开控制页", default, (_, _) => OpenControlPage());
+            var ttsItem = new System.Windows.Forms.ToolStripMenuItem("本地朗读") { Checked = _ttsEnabled };
+            ttsItem.Click += (_, _) => { _ttsEnabled = !_ttsEnabled; ttsItem.Checked = _ttsEnabled; };
+            menu.Items.Add(ttsItem);
+            var autoStartItem = new System.Windows.Forms.ToolStripMenuItem("开机自启") { Checked = IsAutoStart() };
+            autoStartItem.Click += (_, _) =>
+            {
+                try
+                {
+                    using var rk = Microsoft.Win32.Registry.CurrentUser.OpenSubKey(
+                                   @"Software\Microsoft\Windows\CurrentVersion\Run", writable: true)
+                               ?? Microsoft.Win32.Registry.CurrentUser.CreateSubKey(
+                                   @"Software\Microsoft\Windows\CurrentVersion\Run", writable: true);
+                    if (rk is null) return;
+                    var exe = Environment.ProcessPath ?? Path.Combine(AppContext.BaseDirectory, "Clite.exe");
+                    if (IsAutoStart()) { rk.DeleteValue("ClassifyLite", false); autoStartItem.Checked = false; }
+                    else { rk.SetValue("ClassifyLite", "\"" + exe + "\""); autoStartItem.Checked = true; }
+                }
+                catch { }
+            };
+            menu.Items.Add(autoStartItem);
+            menu.Items.Add("退出", default, (_, _) =>
+            {
+                try { _tray.Visible = false; _tray.Dispose(); } catch { }
+                _pollTimer?.Stop();
+                Environment.Exit(0);
+            });
+            _tray.ContextMenuStrip = menu;
+            _tray.DoubleClick += (_, _) => ShowMain();
+            return true;
+        }
+        catch (Exception ex)
         {
-            _tray.Visible = false;
-            _pollTimer?.Stop();
-            Environment.Exit(0);
-        });
-        _tray.ContextMenuStrip = menu;
-        _tray.DoubleClick += (_, _) => ShowMain();
+            LogLite("托盘初始化失败 " + ex);
+            try { _tray?.Dispose(); } catch { }
+            _tray = null!;
+            return false;
+        }
     }
 
     static bool IsAutoStart()
@@ -372,7 +461,10 @@ public static class Program
             ShowInTaskbar = false;
             Topmost = true; // 课堂喊话必须盖住一切（含全屏应用、抢焦点保护的场景）
             Background = new SolidColorBrush(MColor.FromRgb(0x0B, 0x10, 0x20));
-            WindowState = WindowState.Maximized;
+            WindowState = WindowState.Normal;
+            Focusable = true;
+            SourceInitialized += (_, _) => ApplyFullScreen(this);
+            Loaded += (_, _) => { ApplyFullScreen(this); Focus(); };
 
             var stack = new StackPanel { VerticalAlignment = VerticalAlignment.Center, HorizontalAlignment = HAlign.Center };
             stack.Children.Add(new TextBlock
@@ -426,6 +518,49 @@ public static class Program
             closeTimer.Start();
             Closed += (_, _) => closeTimer.Stop();
         }
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct RECT { public int Left, Top, Right, Bottom; }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct MONITORINFO
+    {
+        public int cbSize;
+        public RECT rcMonitor;
+        public RECT rcWork;
+        public uint dwFlags;
+    }
+
+    [DllImport("user32.dll")]
+    private static extern IntPtr MonitorFromWindow(IntPtr hwnd, uint flags);
+
+    [DllImport("user32.dll", EntryPoint = "GetMonitorInfoW")]
+    private static extern bool GetMonitorInfo(IntPtr monitor, ref MONITORINFO info);
+
+    [DllImport("user32.dll")]
+    private static extern bool SetWindowPos(IntPtr hwnd, IntPtr insertAfter,
+        int x, int y, int cx, int cy, uint flags);
+
+    private static readonly IntPtr HwndTopmost = new(-1);
+    private const uint SwpNoActivate = 0x0010;
+    private const uint SwpShowWindow = 0x0040;
+
+    /// <summary>物理像素铺满主显示器（含任务栏）。WPF 的 Maximized 只覆盖工作区，不满足课堂喊话场景。</summary>
+    private static void ApplyFullScreen(Window w)
+    {
+        try
+        {
+            var hwnd = new WindowInteropHelper(w).Handle;
+            var mon = MonitorFromWindow(IntPtr.Zero, 2 /* MONITOR_DEFAULTTONEAREST */);
+            if (mon == IntPtr.Zero) return;
+            var info = new MONITORINFO { cbSize = Marshal.SizeOf<MONITORINFO>() };
+            if (!GetMonitorInfo(mon, ref info)) return;
+            var b = info.rcMonitor;
+            SetWindowPos(hwnd, HwndTopmost, b.Left, b.Top, b.Right - b.Left, b.Bottom - b.Top,
+                SwpNoActivate | SwpShowWindow);
+        }
+        catch { }
     }
 
     [DllImport("user32.dll", CharSet = CharSet.Unicode)]
