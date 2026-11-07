@@ -55,6 +55,14 @@ dotnet publish -c Release -r win-x64 --self-contained true
 - 云端：Cloudflare 账号（Workers Paid 计划才能使用 Durable Objects；免费额度不足以支撑多设备常驻）。
 - 手机端：现代浏览器；可“添加到主屏幕”作为 PWA 使用。
 
+## 兼容性
+
+- 安装器限制 Windows 10 1809+ / x64；默认包自包含 .NET 10 运行时，教室电脑无需单独安装。
+- 支持 125% / 150% / 200% 缩放与多显示器；全屏表面按物理像素铺满。
+- 接收文件支持 OneDrive 桌面重定向、中文用户名、长路径；桌面不可写时回退数据目录。
+- DoH 失败自动熔断并回退系统 DNS；IPv4/IPv6 均可用；WebSocket 失败自动降级长轮询。
+- 托盘/声卡/摄像头等外设缺失时降级运行，不阻塞主流程。
+
 ## 安全与隐私
 
 - 密码 PBKDF2-SHA256 加盐存储；会话为 HMAC 无状态令牌，重置密码/封禁即刻吊销。
@@ -65,11 +73,12 @@ dotnet publish -c Release -r win-x64 --self-contained true
 ## 开发
 
 ```bash
-node tools/version.mjs --check     # 版本号一致性
 node server/scripts/check.mjs     # Worker 语法检查
 node --test server/test/          # Worker 单元测试
 dotnet build desktop/Classify.csproj -c Release -r win-x64
 ```
+
+> 版本号与一键构建脚本位于开发主仓的 `tools/`；本开源仓可直接用上面的命令构建。
 
 ## 支持
 
